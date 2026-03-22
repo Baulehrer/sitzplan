@@ -1,24 +1,30 @@
 # Kaufi's Sitzplan-App
 
-Eine einfache App zum Erstellen von Sitzplaenen fuer den Unterricht.
+Eine einfache App zum Erstellen von Sitzplänen für den Unterricht.
+
+## Screenshots
+
+| Hauptmenü | Sitzplan-Editor | PDF-Export |
+|:---------:|:---------------:|:----------:|
+| ![Hauptmenü](screenshots/hauptmenue.png) | ![Editor](screenshots/editor.png) | ![PDF](screenshots/pdf.png) |
 
 ## Was kann die App?
 
-- **Sitzplaene erstellen** — Raster frei waehlbar (z.B. 4 Reihen x 8 Plaetze)
-- **Schueler zuordnen** — Foto, Vorname, Nachname und optionale Zusatzinfo (z.B. Betrieb)
-- **Drag & Drop** — Schueler per Maus zwischen Plaetzen verschieben oder tauschen
+- **Sitzpläne erstellen** — Raster frei wählbar (z.B. 4 Reihen x 8 Plätze)
+- **Schüler zuordnen** — Foto, Vorname, Nachname und optionale Zusatzinfo (z.B. Betrieb)
+- **Drag & Drop** — Schüler per Maus zwischen Plätzen verschieben oder tauschen
 - **PDF-Export** — Sitzplan als PDF (A4 Querformat) zum Ausdrucken
-- **Gruppen/Klassen** — Sitzplaene nach Klassen organisieren
-- **Duplizieren & Umbenennen** — Bestehende Plaene kopieren oder umbenennen
+- **Gruppen/Klassen** — Sitzpläne nach Klassen organisieren
+- **Duplizieren & Umbenennen** — Bestehende Pläne kopieren oder umbenennen
 - **Dark Mode** — Folgt automatisch dem System-Theme
 
 ## Datenschutz
 
-Alle Daten bleiben **ausschliesslich lokal** auf deinem Geraet:
+Alle Daten bleiben **ausschließlich lokal** auf deinem Gerät:
 
 - Keine Cloud, kein Server, kein Login
 - Keine Telemetrie, kein Tracking
-- Keine Internetverbindung noetig
+- Keine Internetverbindung nötig
 - DSGVO-konform by design
 
 ## Installation
@@ -35,7 +41,7 @@ Alle Daten bleiben **ausschliesslich lokal** auf deinem Geraet:
 
 ### Android
 1. [sitzplan.apk](https://github.com/Baulehrer/sitzplan/releases/latest) herunterladen
-2. APK auf dem Geraet installieren (ggf. "Unbekannte Quellen" erlauben)
+2. APK auf dem Gerät installieren (ggf. "Unbekannte Quellen" erlauben)
 
 ## Lizenz
 
