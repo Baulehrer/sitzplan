@@ -1,0 +1,80 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libblkid-dev
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Package
+        run: |
+          cd build/linux/x64/release/bundle
+          tar czf "$GITHUB_WORKSPACE/sitzplan-linux.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: sitzplan-linux.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath sitzplan-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: sitzplan-windows.zip
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk sitzplan.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: sitzplan.apk
+
+  release:
+    needs: [build-linux, build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            sitzplan-linux.tar.gz
+            sitzplan-windows.zip
+            sitzplan.apk

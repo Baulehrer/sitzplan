@@ -1,0 +1,38 @@
+name: sitzplan
+description: "Kaufi's Sitzplan-App für Lehrer — Sitzpläne erstellen, Schülerfotos zuordnen, als PDF exportieren."
+publish_to: 'none'
+version: 0.5.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.0
+  sqflite_common_ffi: ^2.3.0
+  sqlite3_flutter_libs: ^0.5.0
+  path_provider: ^2.1.0
+  image_picker: ^1.1.0
+  file_selector: ^1.0.0
+  image: ^4.3.0
+  pdf: ^3.11.0
+  printing: ^5.13.0
+  uuid: ^4.5.0
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#009688"
+
+flutter:
+  uses-material-design: true
