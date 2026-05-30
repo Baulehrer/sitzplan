@@ -16,7 +16,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
@@ -29,7 +29,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
@@ -41,7 +41,7 @@ jobs:
         run: |
           cd build/linux/x64/release/bundle
           tar czf "$GITHUB_WORKSPACE/sitzplan-linux.tar.gz" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-linux
           path: sitzplan-linux.tar.gz
@@ -50,7 +50,7 @@ jobs:
     needs: validate
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
@@ -59,7 +59,7 @@ jobs:
       - run: flutter build windows --release
       - name: Package
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath sitzplan-windows.zip -Force
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-windows
           path: sitzplan-windows.zip
@@ -68,7 +68,7 @@ jobs:
     needs: validate
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
@@ -83,7 +83,7 @@ jobs:
             exit 1
           fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/sitzplan-macos.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-macos
           path: sitzplan-macos.zip
@@ -92,7 +92,7 @@ jobs:
     needs: validate
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
@@ -108,7 +108,7 @@ jobs:
             exit 1
           fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/sitzplan-ios-unsigned.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-ios-unsigned
           path: sitzplan-ios-unsigned.zip
@@ -117,8 +117,8 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -130,7 +130,7 @@ jobs:
       - run: flutter build apk --release
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk sitzplan-android.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-android
           path: sitzplan-android.apk
@@ -140,11 +140,11 @@ jobs:
     needs: [build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           merge-multiple: true
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
