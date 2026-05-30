@@ -39,6 +39,8 @@ flutter test
 
 Aktuelle Version: `1.0.0`
 
+GitHub Actions erstellt bei Tags wie `v1.0.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS. Das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert; für TestFlight oder App Store sind zusätzliche Signing-Secrets nötig. Die Android-APK nutzt aktuell die im Projekt konfigurierte Debug-Signierung für Release-Builds.
+
 Build-Beispiele:
 
 ```bash
