@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../models/seating_plan.dart';
 import '../services/image_service.dart';
@@ -34,21 +36,28 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
   String? _photoPath;
   final _imageService = ImageService();
   bool _saving = false;
+  bool _completed = false;
 
   @override
   void initState() {
     super.initState();
-    _firstNameController =
-        TextEditingController(text: widget.seat?.firstName ?? '');
-    _lastNameController =
-        TextEditingController(text: widget.seat?.lastName ?? '');
-    _extraInfoController =
-        TextEditingController(text: widget.seat?.extraInfo ?? '');
+    _firstNameController = TextEditingController(
+      text: widget.seat?.firstName ?? '',
+    );
+    _lastNameController = TextEditingController(
+      text: widget.seat?.lastName ?? '',
+    );
+    _extraInfoController = TextEditingController(
+      text: widget.seat?.extraInfo ?? '',
+    );
     _photoPath = widget.seat?.photoPath;
   }
 
   @override
   void dispose() {
+    if (!_completed && _isTemporaryPhoto(_photoPath)) {
+      unawaited(_imageService.deletePhoto(_photoPath));
+    }
     _firstNameController.dispose();
     _lastNameController.dispose();
     _extraInfoController.dispose();
@@ -58,8 +67,12 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
   Future<void> _pickPhoto() async {
     final path = await _imageService.pickFromGallery();
     if (path != null) {
-      if (_photoPath != null && _photoPath != widget.seat?.photoPath) {
+      if (_isTemporaryPhoto(_photoPath)) {
         await _imageService.deletePhoto(_photoPath);
+      }
+      if (!mounted) {
+        await _imageService.deletePhoto(path);
+        return;
       }
       setState(() => _photoPath = path);
     }
@@ -77,8 +90,12 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
       return;
     }
     if (path != null) {
-      if (_photoPath != null && _photoPath != widget.seat?.photoPath) {
+      if (_isTemporaryPhoto(_photoPath)) {
         await _imageService.deletePhoto(_photoPath);
+      }
+      if (!mounted) {
+        await _imageService.deletePhoto(path);
+        return;
       }
       setState(() => _photoPath = path);
     }
@@ -86,7 +103,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
 
   Future<void> _removePhoto() async {
     if (_photoPath != null) {
-      if (_photoPath != widget.seat?.photoPath) {
+      if (_isTemporaryPhoto(_photoPath)) {
         await _imageService.deletePhoto(_photoPath);
       }
       setState(() => _photoPath = null);
@@ -96,11 +113,6 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
-
-    if (widget.seat?.photoPath != null &&
-        widget.seat?.photoPath != _photoPath) {
-      await _imageService.deletePhoto(widget.seat?.photoPath);
-    }
 
     final seat = Seat(
       id: widget.seat?.id,
@@ -120,16 +132,22 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     );
 
     await widget.onSave(seat);
+    _completed = true;
     if (mounted) Navigator.pop(context);
   }
 
   Future<void> _delete() async {
     if (widget.onDelete == null) return;
-    if (widget.seat?.photoPath != null) {
-      await _imageService.deletePhoto(widget.seat?.photoPath);
+    if (_isTemporaryPhoto(_photoPath)) {
+      await _imageService.deletePhoto(_photoPath);
     }
     await widget.onDelete!();
+    _completed = true;
     if (mounted) Navigator.pop(context);
+  }
+
+  bool _isTemporaryPhoto(String? path) {
+    return path != null && path != widget.seat?.photoPath;
   }
 
   @override
@@ -153,8 +171,10 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                 ),
                 if (widget.onDelete != null)
                   IconButton(
-                    icon: Icon(Icons.delete_outline,
-                        color: theme.colorScheme.error),
+                    icon: Icon(
+                      Icons.delete_outline,
+                      color: theme.colorScheme.error,
+                    ),
                     onPressed: _delete,
                     tooltip: 'Platz leeren',
                   ),
@@ -192,11 +212,12 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
               alignment: WrapAlignment.center,
               spacing: 4,
               children: [
-                TextButton.icon(
-                  onPressed: _takePhoto,
-                  icon: const Icon(Icons.camera_alt_outlined),
-                  label: const Text('Aufnehmen'),
-                ),
+                if (_imageService.isCameraAvailable)
+                  TextButton.icon(
+                    onPressed: _takePhoto,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Aufnehmen'),
+                  ),
                 TextButton.icon(
                   onPressed: _pickPhoto,
                   icon: const Icon(Icons.photo_library_outlined),

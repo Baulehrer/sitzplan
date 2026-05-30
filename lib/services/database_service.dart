@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:uuid/uuid.dart';
 import '../models/seating_plan.dart';
 
 class DatabaseService {
@@ -10,6 +11,7 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
+  final _uuid = const Uuid();
   Database? _db;
 
   Future<Database> get database async {
@@ -20,7 +22,8 @@ class DatabaseService {
 
   Future<Database> _initDatabase() async {
     // Use FFI for desktop platforms
-    if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    if (!kIsWeb &&
+        (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
@@ -34,6 +37,9 @@ class DatabaseService {
     return await openDatabase(
       dbPath,
       version: 3,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE plans (
@@ -99,16 +105,17 @@ class DatabaseService {
 
   Future<void> deletePlan(int planId) async {
     final db = await database;
-    // Delete associated photos
     final seats = await getSeats(planId);
-    for (final seat in seats) {
-      if (seat.photoPath != null) {
-        final file = File(seat.photoPath!);
-        if (await file.exists()) await file.delete();
-      }
+    final photoPaths = _photoPathsFromSeats(seats);
+
+    await db.transaction((txn) async {
+      await txn.delete('seats', where: 'plan_id = ?', whereArgs: [planId]);
+      await txn.delete('plans', where: 'id = ?', whereArgs: [planId]);
+    });
+
+    for (final photoPath in photoPaths) {
+      await _deletePhotoIfUnused(photoPath);
     }
-    await db.delete('seats', where: 'plan_id = ?', whereArgs: [planId]);
-    await db.delete('plans', where: 'id = ?', whereArgs: [planId]);
   }
 
   // --- Seats ---
@@ -126,26 +133,71 @@ class DatabaseService {
 
   Future<Seat> upsertSeat(Seat seat) async {
     final db = await database;
-    if (seat.id != null) {
-      await db.update('seats', seat.toMap(), where: 'id = ?', whereArgs: [seat.id]);
-      return seat;
-    } else {
-      final id = await db.insert('seats', seat.toMap());
-      return seat.copyWith(id: id);
+    Seat? previous;
+    Seat? saved;
+
+    await db.transaction((txn) async {
+      if (seat.id != null) {
+        previous = await _getSeatById(txn, seat.id!);
+        await txn.update(
+          'seats',
+          seat.toMap(),
+          where: 'id = ?',
+          whereArgs: [seat.id],
+        );
+        saved = seat;
+      } else {
+        final id = await txn.insert('seats', seat.toMap());
+        saved = seat.copyWith(id: id);
+      }
+      await _touchPlan(txn, saved!.planId);
+    });
+
+    final previousPhotoPath = previous?.photoPath;
+    if (previousPhotoPath != null && previousPhotoPath != saved!.photoPath) {
+      await _deletePhotoIfUnused(previousPhotoPath);
     }
+
+    return saved!;
   }
 
   Future<void> deleteSeat(int seatId) async {
     final db = await database;
-    await db.delete('seats', where: 'id = ?', whereArgs: [seatId]);
+    Seat? deleted;
+
+    await db.transaction((txn) async {
+      deleted = await _getSeatById(txn, seatId);
+      await txn.delete('seats', where: 'id = ?', whereArgs: [seatId]);
+      if (deleted != null) {
+        await _touchPlan(txn, deleted!.planId);
+      }
+    });
+
+    final photoPath = deleted?.photoPath;
+    if (photoPath != null) {
+      await _deletePhotoIfUnused(photoPath);
+    }
   }
 
   Future<void> deleteSeatsForPlan(int planId) async {
     final db = await database;
-    await db.delete('seats', where: 'plan_id = ?', whereArgs: [planId]);
+    final seats = await getSeats(planId);
+    final photoPaths = _photoPathsFromSeats(seats);
+
+    await db.transaction((txn) async {
+      await txn.delete('seats', where: 'plan_id = ?', whereArgs: [planId]);
+      await _touchPlan(txn, planId);
+    });
+
+    for (final photoPath in photoPaths) {
+      await _deletePhotoIfUnused(photoPath);
+    }
   }
 
-  Future<SeatingPlan> duplicatePlan(SeatingPlan original, String newName) async {
+  Future<SeatingPlan> duplicatePlan(
+    SeatingPlan original,
+    String newName,
+  ) async {
     final newPlan = SeatingPlan(
       name: newName,
       rows: original.rows,
@@ -155,20 +207,75 @@ class DatabaseService {
     );
     final created = await createPlan(newPlan);
 
-    // Copy all seats
     final seats = await getSeats(original.id!);
     for (final seat in seats) {
-      await upsertSeat(Seat(
-        planId: created.id!,
-        row: seat.row,
-        col: seat.col,
-        firstName: seat.firstName,
-        lastName: seat.lastName,
-        photoPath: seat.photoPath, // Reference same photo file
-        extraInfo: seat.extraInfo,
-      ));
+      final copiedPhotoPath = await _copyPhoto(seat.photoPath);
+      await upsertSeat(
+        Seat(
+          planId: created.id!,
+          row: seat.row,
+          col: seat.col,
+          firstName: seat.firstName,
+          lastName: seat.lastName,
+          photoPath: copiedPhotoPath,
+          extraInfo: seat.extraInfo,
+        ),
+      );
     }
 
     return created;
+  }
+
+  Future<Seat?> _getSeatById(DatabaseExecutor db, int seatId) async {
+    final maps = await db.query(
+      'seats',
+      where: 'id = ?',
+      whereArgs: [seatId],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return Seat.fromMap(maps.first);
+  }
+
+  Future<void> _touchPlan(DatabaseExecutor db, int planId) async {
+    await db.update(
+      'plans',
+      {'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [planId],
+    );
+  }
+
+  Future<String?> _copyPhoto(String? photoPath) async {
+    if (photoPath == null) return null;
+
+    final source = File(photoPath);
+    if (!await source.exists()) return null;
+
+    final extension = p.extension(photoPath).isEmpty
+        ? '.jpg'
+        : p.extension(photoPath);
+    final targetPath = p.join(p.dirname(photoPath), '${_uuid.v4()}$extension');
+    final copy = await source.copy(targetPath);
+    return copy.path;
+  }
+
+  Future<void> _deletePhotoIfUnused(String photoPath) async {
+    final db = await database;
+    final references = await db.rawQuery(
+      'SELECT COUNT(*) AS count FROM seats WHERE photo_path = ?',
+      [photoPath],
+    );
+    final count = references.first['count'] as int? ?? 0;
+    if (count > 0) return;
+
+    final file = File(photoPath);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
+  Set<String> _photoPathsFromSeats(Iterable<Seat> seats) {
+    return seats.map((seat) => seat.photoPath).whereType<String>().toSet();
   }
 }

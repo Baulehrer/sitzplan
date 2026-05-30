@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import '../models/seating_plan.dart';
 import '../services/database_service.dart';
@@ -7,19 +9,34 @@ class SeatingPlanListProvider extends ChangeNotifier {
   List<SeatingPlan> _plans = [];
   bool _loading = false;
 
-  List<SeatingPlan> get plans => _plans;
+  UnmodifiableListView<SeatingPlan> get plans => UnmodifiableListView(_plans);
   bool get loading => _loading;
 
   Future<void> loadPlans() async {
     _loading = true;
     notifyListeners();
-    _plans = await _db.getPlans();
-    _loading = false;
-    notifyListeners();
+    try {
+      _plans = await _db.getPlans();
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
   }
 
-  Future<SeatingPlan> createPlan(String name, int rows, int columns, {String? extraLabel, String? groupName}) async {
-    final plan = SeatingPlan(name: name, rows: rows, columns: columns, extraLabel: extraLabel, groupName: groupName);
+  Future<SeatingPlan> createPlan(
+    String name,
+    int rows,
+    int columns, {
+    String? extraLabel,
+    String? groupName,
+  }) async {
+    final plan = SeatingPlan(
+      name: name,
+      rows: rows,
+      columns: columns,
+      extraLabel: extraLabel,
+      groupName: groupName,
+    );
     final created = await _db.createPlan(plan);
     _plans.insert(0, created);
     notifyListeners();
@@ -41,7 +58,10 @@ class SeatingPlanListProvider extends ChangeNotifier {
     }
   }
 
-  Future<SeatingPlan> duplicatePlan(SeatingPlan original, String newName) async {
+  Future<SeatingPlan> duplicatePlan(
+    SeatingPlan original,
+    String newName,
+  ) async {
     final created = await _db.duplicatePlan(original, newName);
     _plans.insert(0, created);
     notifyListeners();
@@ -63,37 +83,38 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   final _db = DatabaseService();
   SeatingPlan? _plan;
   List<Seat> _seats = [];
+  Map<String, Seat> _seatByPosition = {};
   bool _loading = false;
 
   SeatingPlan? get plan => _plan;
-  List<Seat> get seats => _seats;
+  UnmodifiableListView<Seat> get seats => UnmodifiableListView(_seats);
   bool get loading => _loading;
 
-  Seat? getSeat(int row, int col) {
-    try {
-      return _seats.firstWhere((s) => s.row == row && s.col == col);
-    } catch (_) {
-      return null;
-    }
-  }
+  Seat? getSeat(int row, int col) => _seatByPosition[_positionKey(row, col)];
 
   Future<void> loadPlan(SeatingPlan plan) async {
     _loading = true;
     _plan = plan;
     notifyListeners();
-    _seats = await _db.getSeats(plan.id!);
-    _loading = false;
-    notifyListeners();
+    try {
+      _setSeats(await _db.getSeats(plan.id!));
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> saveSeat(Seat seat) async {
     final saved = await _db.upsertSeat(seat);
-    final index = _seats.indexWhere((s) => s.row == seat.row && s.col == seat.col);
+    final index = _seats.indexWhere(
+      (s) => s.id == saved.id || (s.row == saved.row && s.col == saved.col),
+    );
     if (index >= 0) {
       _seats[index] = saved;
     } else {
       _seats.add(saved);
     }
+    _rebuildSeatIndex();
     notifyListeners();
   }
 
@@ -103,6 +124,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
       await _db.deleteSeat(seat!.id!);
     }
     _seats.removeWhere((s) => s.row == row && s.col == col);
+    _seatByPosition.remove(_positionKey(row, col));
     notifyListeners();
   }
 
@@ -150,14 +172,27 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
 
     // Reload seats from DB to get clean state
     if (_plan != null) {
-      _seats = await _db.getSeats(_plan!.id!);
+      _setSeats(await _db.getSeats(_plan!.id!));
       notifyListeners();
     }
   }
 
   void clear() {
     _plan = null;
-    _seats = [];
+    _setSeats([]);
     notifyListeners();
   }
+
+  void _setSeats(List<Seat> seats) {
+    _seats = List<Seat>.from(seats);
+    _rebuildSeatIndex();
+  }
+
+  void _rebuildSeatIndex() {
+    _seatByPosition = {
+      for (final seat in _seats) _positionKey(seat.row, seat.col): seat,
+    };
+  }
+
+  String _positionKey(int row, int col) => '$row:$col';
 }
