@@ -6,14 +6,10 @@ class AppTheme {
       useMaterial3: true,
       colorSchemeSeed: Colors.teal,
       brightness: Brightness.light,
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-      ),
+      appBarTheme: const AppBarTheme(centerTitle: true),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         elevation: 4,
@@ -26,14 +22,10 @@ class AppTheme {
       useMaterial3: true,
       colorSchemeSeed: Colors.teal,
       brightness: Brightness.dark,
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-      ),
+      appBarTheme: const AppBarTheme(centerTitle: true),
       cardTheme: CardThemeData(
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         elevation: 4,

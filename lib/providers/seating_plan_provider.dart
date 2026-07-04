@@ -133,48 +133,11 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     if (fromRow == toRow && fromCol == toCol) return;
 
     final fromSeat = getSeat(fromRow, fromCol);
-    final toSeat = getSeat(toRow, toCol);
+    if (_plan == null || fromSeat == null || fromSeat.isEmpty) return;
 
-    if (fromSeat == null || fromSeat.isEmpty) return;
-
-    // Update source seat to target position
-    final movedSeat = Seat(
-      id: fromSeat.id,
-      planId: fromSeat.planId,
-      row: toRow,
-      col: toCol,
-      firstName: fromSeat.firstName,
-      lastName: fromSeat.lastName,
-      photoPath: fromSeat.photoPath,
-      extraInfo: fromSeat.extraInfo,
-    );
-    await _db.upsertSeat(movedSeat);
-
-    if (toSeat != null && !toSeat.isEmpty) {
-      // Swap: move target seat to source position
-      final swappedSeat = Seat(
-        id: toSeat.id,
-        planId: toSeat.planId,
-        row: fromRow,
-        col: fromCol,
-        firstName: toSeat.firstName,
-        lastName: toSeat.lastName,
-        photoPath: toSeat.photoPath,
-        extraInfo: toSeat.extraInfo,
-      );
-      await _db.upsertSeat(swappedSeat);
-    } else {
-      // Target was empty — remove source
-      if (fromSeat.id != null) {
-        // We reused the id for the moved seat, so just remove from list
-      }
-    }
-
-    // Reload seats from DB to get clean state
-    if (_plan != null) {
-      _setSeats(await _db.getSeats(_plan!.id!));
-      notifyListeners();
-    }
+    await _db.moveSeat(_plan!.id!, fromRow, fromCol, toRow, toCol);
+    _setSeats(await _db.getSeats(_plan!.id!));
+    notifyListeners();
   }
 
   void clear() {

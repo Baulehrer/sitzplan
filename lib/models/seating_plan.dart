@@ -17,8 +17,8 @@ class SeatingPlan {
     this.groupName,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   bool get hasExtraField => extraLabel != null && extraLabel!.isNotEmpty;
 
@@ -94,11 +94,17 @@ class Seat {
   });
 
   bool get isEmpty =>
-      firstName == null && lastName == null && photoPath == null && extraInfo == null;
+      firstName == null &&
+      lastName == null &&
+      photoPath == null &&
+      extraInfo == null;
 
   String get displayName {
     if (firstName == null && lastName == null) return '';
-    return [firstName, lastName].where((s) => s != null && s.isNotEmpty).join(' ');
+    return [
+      firstName,
+      lastName,
+    ].where((s) => s != null && s.isNotEmpty).join(' ');
   }
 
   Seat copyWith({

@@ -194,6 +194,46 @@ class DatabaseService {
     }
   }
 
+  Future<void> moveSeat(
+    int planId,
+    int fromRow,
+    int fromCol,
+    int toRow,
+    int toCol,
+  ) async {
+    if (fromRow == toRow && fromCol == toCol) return;
+
+    final db = await database;
+    await db.transaction((txn) async {
+      final fromSeat = await _getSeatByPosition(txn, planId, fromRow, fromCol);
+      if (fromSeat == null || fromSeat.isEmpty) return;
+
+      final toSeat = await _getSeatByPosition(txn, planId, toRow, toCol);
+
+      if (toSeat != null && toSeat.isEmpty) {
+        await txn.delete('seats', where: 'id = ?', whereArgs: [toSeat.id]);
+      }
+
+      await txn.update(
+        'seats',
+        fromSeat.copyWith(row: toRow, col: toCol).toMap(),
+        where: 'id = ?',
+        whereArgs: [fromSeat.id],
+      );
+
+      if (toSeat != null && !toSeat.isEmpty) {
+        await txn.update(
+          'seats',
+          toSeat.copyWith(row: fromRow, col: fromCol).toMap(),
+          where: 'id = ?',
+          whereArgs: [toSeat.id],
+        );
+      }
+
+      await _touchPlan(txn, planId);
+    });
+  }
+
   Future<SeatingPlan> duplicatePlan(
     SeatingPlan original,
     String newName,
@@ -231,6 +271,22 @@ class DatabaseService {
       'seats',
       where: 'id = ?',
       whereArgs: [seatId],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return Seat.fromMap(maps.first);
+  }
+
+  Future<Seat?> _getSeatByPosition(
+    DatabaseExecutor db,
+    int planId,
+    int row,
+    int col,
+  ) async {
+    final maps = await db.query(
+      'seats',
+      where: 'plan_id = ? AND row = ? AND col = ?',
+      whereArgs: [planId, row, col],
       limit: 1,
     );
     if (maps.isEmpty) return null;

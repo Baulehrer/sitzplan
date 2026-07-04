@@ -131,23 +131,51 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
           : _extraInfoController.text.trim(),
     );
 
-    await widget.onSave(seat);
-    _completed = true;
-    if (mounted) Navigator.pop(context);
+    try {
+      await widget.onSave(seat);
+      _completed = true;
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        _showError('Speichern fehlgeschlagen: $error');
+      }
+    } finally {
+      if (mounted && !_completed) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   Future<void> _delete() async {
-    if (widget.onDelete == null) return;
-    if (_isTemporaryPhoto(_photoPath)) {
-      await _imageService.deletePhoto(_photoPath);
+    if (widget.onDelete == null || _saving) return;
+    setState(() => _saving = true);
+
+    try {
+      if (_isTemporaryPhoto(_photoPath)) {
+        await _imageService.deletePhoto(_photoPath);
+      }
+      await widget.onDelete!();
+      _completed = true;
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        _showError('Löschen fehlgeschlagen: $error');
+      }
+    } finally {
+      if (mounted && !_completed) {
+        setState(() => _saving = false);
+      }
     }
-    await widget.onDelete!();
-    _completed = true;
-    if (mounted) Navigator.pop(context);
   }
 
   bool _isTemporaryPhoto(String? path) {
     return path != null && path != widget.seat?.photoPath;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+    );
   }
 
   @override
@@ -175,7 +203,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                       Icons.delete_outline,
                       color: theme.colorScheme.error,
                     ),
-                    onPressed: _delete,
+                    onPressed: _saving ? null : _delete,
                     tooltip: 'Platz leeren',
                   ),
               ],

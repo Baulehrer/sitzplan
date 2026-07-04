@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sitzplan
+Comment=Sitzpläne erstellen, Schülerfotos zuordnen und als PDF exportieren
+Exec=AppRun
+Icon=de.kaufmann.sitzplan
+Categories=Education;
+Terminal=false

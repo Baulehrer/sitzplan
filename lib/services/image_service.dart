@@ -25,7 +25,10 @@ class ImageService {
   /// Checks if a camera/webcam is available on this platform
   bool get isCameraAvailable {
     if (kIsWeb) return false;
-    return Platform.isAndroid || Platform.isIOS || Platform.isLinux || Platform.isWindows;
+    return Platform.isAndroid ||
+        Platform.isIOS ||
+        Platform.isLinux ||
+        Platform.isWindows;
   }
 
   Future<String?> pickFromCamera() async {
@@ -61,20 +64,28 @@ class ImageService {
         // Use ffmpeg to capture a single frame from /dev/video0
         result = await Process.run('ffmpeg', [
           '-y',
-          '-f', 'v4l2',
-          '-i', '/dev/video0',
-          '-frames:v', '1',
-          '-q:v', '2',
+          '-f',
+          'v4l2',
+          '-i',
+          '/dev/video0',
+          '-frames:v',
+          '1',
+          '-q:v',
+          '2',
           tempPath,
         ]);
       } else {
         // Windows: use dshow
         result = await Process.run('ffmpeg', [
           '-y',
-          '-f', 'dshow',
-          '-i', 'video=Integrated Camera',
-          '-frames:v', '1',
-          '-q:v', '2',
+          '-f',
+          'dshow',
+          '-i',
+          'video=Integrated Camera',
+          '-frames:v',
+          '1',
+          '-q:v',
+          '2',
           tempPath,
         ]);
       }
@@ -98,7 +109,8 @@ class ImageService {
   }
 
   Future<String?> pickFromGallery() async {
-    if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    if (!kIsWeb &&
+        (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
       return await _pickFromFileSelector();
     }
     final picked = await _picker.pickImage(

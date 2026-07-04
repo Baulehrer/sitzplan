@@ -6,11 +6,7 @@ class SeatCard extends StatelessWidget {
   final Seat? seat;
   final VoidCallback onTap;
 
-  const SeatCard({
-    super.key,
-    this.seat,
-    required this.onTap,
-  });
+  const SeatCard({super.key, this.seat, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -37,11 +33,7 @@ class SeatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Center(
-        child: Icon(
-          Icons.add,
-          color: theme.colorScheme.outline,
-          size: 28,
-        ),
+        child: Icon(Icons.add, color: theme.colorScheme.outline, size: 28),
       ),
     );
   }

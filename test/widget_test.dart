@@ -18,7 +18,12 @@ void main() {
     });
 
     test('hasExtraField returns true when label is set', () {
-      final plan = SeatingPlan(name: 'Test', rows: 3, columns: 6, extraLabel: 'Betrieb');
+      final plan = SeatingPlan(
+        name: 'Test',
+        rows: 3,
+        columns: 6,
+        extraLabel: 'Betrieb',
+      );
       expect(plan.hasExtraField, isTrue);
     });
 
@@ -33,6 +38,22 @@ void main() {
       expect(copy.name, 'Neuer Name');
       expect(copy.rows, 5);
       expect(copy.columns, 6);
+    });
+
+    test('copyWith clears optional labels explicitly', () {
+      final plan = SeatingPlan(
+        name: 'Test',
+        rows: 3,
+        columns: 6,
+        extraLabel: 'Betrieb',
+        groupName: 'Klasse 7a',
+      );
+
+      final copy = plan.copyWith(clearExtraLabel: true, clearGroupName: true);
+
+      expect(copy.extraLabel, isNull);
+      expect(copy.groupName, isNull);
+      expect(copy.name, 'Test');
     });
   });
 
@@ -53,8 +74,13 @@ void main() {
     });
 
     test('displayName combines first and last name', () {
-      final seat =
-          Seat(planId: 1, row: 0, col: 0, firstName: 'Max', lastName: 'Müller');
+      final seat = Seat(
+        planId: 1,
+        row: 0,
+        col: 0,
+        firstName: 'Max',
+        lastName: 'Müller',
+      );
       expect(seat.displayName, 'Max Müller');
     });
 
@@ -76,6 +102,30 @@ void main() {
       expect(restored.extraInfo, 'Bäckerei Müller');
       expect(restored.row, 3);
       expect(restored.col, 4);
+    });
+
+    test('copyWith moves seat without losing details', () {
+      final seat = Seat(
+        id: 1,
+        planId: 2,
+        row: 0,
+        col: 1,
+        firstName: 'Anna',
+        lastName: 'Schmidt',
+        photoPath: '/photos/test.jpg',
+        extraInfo: 'Bäckerei Müller',
+      );
+
+      final moved = seat.copyWith(row: 2, col: 3);
+
+      expect(moved.id, 1);
+      expect(moved.planId, 2);
+      expect(moved.row, 2);
+      expect(moved.col, 3);
+      expect(moved.firstName, 'Anna');
+      expect(moved.lastName, 'Schmidt');
+      expect(moved.photoPath, '/photos/test.jpg');
+      expect(moved.extraInfo, 'Bäckerei Müller');
     });
   });
 }

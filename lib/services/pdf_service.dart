@@ -99,9 +99,7 @@ class PdfService {
 
     // Empty cell — still shows the grid border
     if (seat == null || seat.isEmpty) {
-      return pw.Container(
-        height: cellHeight,
-      );
+      return pw.Container(height: cellHeight);
     }
 
     return pw.Container(
@@ -157,10 +155,7 @@ class PdfService {
           if (seat.lastName != null && seat.lastName!.isNotEmpty)
             pw.Text(
               seat.lastName!,
-              style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.center,
               maxLines: 1,
             ),
@@ -171,10 +166,7 @@ class PdfService {
               seat.extraInfo!.isNotEmpty)
             pw.Text(
               seat.extraInfo!,
-              style: const pw.TextStyle(
-                fontSize: 6,
-                color: PdfColors.grey700,
-              ),
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
               textAlign: pw.TextAlign.center,
               maxLines: 1,
             ),

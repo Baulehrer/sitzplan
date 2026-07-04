@@ -91,7 +91,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 final plan = widget.plan;
                 final cellWidth =
                     (constraints.maxWidth - (plan.columns - 1) * 8) /
-                        plan.columns;
+                    plan.columns;
                 final cellHeight = cellWidth * 1.2;
 
                 return SingleChildScrollView(
@@ -111,7 +111,12 @@ class _EditorScreenState extends State<EditorScreen> {
                                     child: SizedBox(
                                       height: cellHeight,
                                       child: _buildDragTarget(
-                                        r, c, editor, cellWidth, cellHeight),
+                                        r,
+                                        c,
+                                        editor,
+                                        cellWidth,
+                                        cellHeight,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -187,10 +192,7 @@ class _EditorScreenState extends State<EditorScreen> {
               child: SizedBox(
                 width: cellWidth * 0.9,
                 height: cellHeight * 0.9,
-                child: Opacity(
-                  opacity: 0.85,
-                  child: card,
-                ),
+                child: Opacity(opacity: 0.85, child: card),
               ),
             ),
             childWhenDragging: Card(
@@ -231,10 +233,9 @@ class _EditorScreenState extends State<EditorScreen> {
                     color: Theme.of(context).colorScheme.primary,
                     width: 2.5,
                   ),
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withValues(alpha: 0.3),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                 )
               : null,
           child: card,
