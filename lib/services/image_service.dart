@@ -123,6 +123,33 @@ class ImageService {
     return await _saveAndCompress(File(picked.path));
   }
 
+  Future<List<String>> pickMultipleFromGallery() async {
+    if (!kIsWeb &&
+        (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+      const typeGroup = XTypeGroup(
+        label: 'Bilder',
+        extensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+      final files = await openFiles(acceptedTypeGroups: [typeGroup]);
+      final saved = <String>[];
+      for (final file in files) {
+        saved.add(await _saveAndCompress(File(file.path)));
+      }
+      return saved;
+    }
+
+    final picked = await _picker.pickMultiImage(
+      maxWidth: 600,
+      maxHeight: 600,
+      imageQuality: 80,
+    );
+    final saved = <String>[];
+    for (final image in picked) {
+      saved.add(await _saveAndCompress(File(image.path)));
+    }
+    return saved;
+  }
+
   Future<String?> _pickFromFileSelector() async {
     const typeGroup = XTypeGroup(
       label: 'Bilder',

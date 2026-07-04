@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/seating_plan_provider.dart';
 import '../models/seating_plan.dart';
+import '../services/import_export_service.dart';
 import 'editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,12 +15,22 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _searchController = TextEditingController();
+  final Set<String> _collapsedGroups = {};
+  final List<int> _recentPlanIds = [];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SeatingPlanListProvider>().loadPlans();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _showNewPlanDialog() {
@@ -204,6 +215,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openEditor(SeatingPlan plan) {
+    setState(() {
+      _recentPlanIds.remove(plan.id);
+      if (plan.id != null) {
+        _recentPlanIds.insert(0, plan.id!);
+      }
+      if (_recentPlanIds.length > 3) {
+        _recentPlanIds.removeRange(3, _recentPlanIds.length);
+      }
+    });
+
     unawaited(
       Navigator.push<void>(
         context,
@@ -236,6 +257,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _showDuplicateDialog(plan);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.dashboard_customize_outlined),
+              title: const Text('Als Vorlage speichern'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _saveAsTemplate(plan);
               },
             ),
             ListTile(
@@ -316,40 +345,70 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showDuplicateDialog(SeatingPlan plan) {
     final controller = TextEditingController(text: '${plan.name} (Kopie)');
+    var includePhotos = true;
     unawaited(
       showDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Sitzplan duplizieren'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: 'Name der Kopie',
-              border: OutlineInputBorder(),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Sitzplan duplizieren'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'Name der Kopie',
+                    border: OutlineInputBorder(),
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: includePhotos,
+                  onChanged: (value) =>
+                      setDialogState(() => includePhotos = value ?? true),
+                  title: const Text('Fotos mitkopieren'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
             ),
-            autofocus: true,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Abbrechen'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final name = controller.text.trim();
+                  if (name.isEmpty) return;
+                  await context.read<SeatingPlanListProvider>().duplicatePlan(
+                    plan,
+                    name,
+                    includePhotos: includePhotos,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Duplizieren'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final name = controller.text.trim();
-                if (name.isEmpty) return;
-                await context.read<SeatingPlanListProvider>().duplicatePlan(
-                  plan,
-                  name,
-                );
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Duplizieren'),
-            ),
-          ],
         ),
       ).whenComplete(controller.dispose),
     );
+  }
+
+  Future<void> _saveAsTemplate(SeatingPlan plan) async {
+    await context.read<SeatingPlanListProvider>().duplicatePlan(
+      plan,
+      '${plan.name} Vorlage',
+      copySeats: false,
+      includePhotos: false,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Vorlage gespeichert')));
   }
 
   void _showChangeGroupDialog(SeatingPlan plan) {
@@ -442,10 +501,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _exportBackup() async {
+    try {
+      final path = await ImportExportService().exportBackup();
+      if (!mounted || path == null) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Backup gespeichert: $path')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Backup fehlgeschlagen: $error')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Kaufi's Sitzplan-App")),
+      appBar: AppBar(
+        title: const Text("Kaufi's Sitzplan-App"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Backup exportieren',
+            onPressed: _exportBackup,
+          ),
+        ],
+      ),
       body: Consumer<SeatingPlanListProvider>(
         builder: (context, provider, _) {
           if (provider.loading) {
@@ -480,9 +563,32 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
+          final query = _searchController.text.trim().toLowerCase();
+          final visiblePlans = query.isEmpty
+              ? provider.plans
+              : provider.plans.where((plan) {
+                  final group = plan.groupName ?? '';
+                  return plan.name.toLowerCase().contains(query) ||
+                      group.toLowerCase().contains(query);
+                }).toList();
+
+          final recentPlans = _recentPlanIds
+              .map(
+                (id) => provider.plans.cast<SeatingPlan?>().firstWhere(
+                  (plan) => plan?.id == id,
+                  orElse: () => null,
+                ),
+              )
+              .whereType<SeatingPlan>()
+              .where(
+                (plan) => visiblePlans.any((visible) => visible.id == plan.id),
+              )
+              .take(3)
+              .toList();
+
           // Group plans by groupName
           final grouped = <String?, List<SeatingPlan>>{};
-          for (final plan in provider.plans) {
+          for (final plan in visiblePlans) {
             grouped.putIfAbsent(plan.groupName, () => []).add(plan);
           }
 
@@ -498,31 +604,74 @@ class _HomeScreenState extends State<HomeScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              for (final groupName in sortedKeys) ...[
-                if (groupName != null && groupName.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.folder_outlined,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          groupName,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                      ],
+              TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  labelText: 'Suchen',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              if (recentPlans.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Zuletzt geöffnet',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                for (final plan in recentPlans) _buildPlanCard(plan),
+              ],
+              if (grouped.isEmpty) ...[
+                const SizedBox(height: 32),
+                Center(
+                  child: Text(
+                    'Keine passenden Sitzpläne',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
                     ),
                   ),
+                ),
+              ],
+              for (final groupName in sortedKeys) ...[
+                if (groupName != null && groupName.isNotEmpty) ...[
+                  ListTile(
+                    contentPadding: const EdgeInsets.only(
+                      left: 4,
+                      right: 4,
+                      top: 8,
+                    ),
+                    leading: Icon(
+                      _collapsedGroups.contains(groupName)
+                          ? Icons.folder_outlined
+                          : Icons.folder_open_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(
+                      groupName,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: Icon(
+                      _collapsedGroups.contains(groupName)
+                          ? Icons.expand_more
+                          : Icons.expand_less,
+                    ),
+                    onTap: () {
+                      setState(() {
+                        if (!_collapsedGroups.add(groupName)) {
+                          _collapsedGroups.remove(groupName);
+                        }
+                      });
+                    },
+                  ),
                 ],
-                for (final plan in grouped[groupName]!) _buildPlanCard(plan),
+                if (groupName == null ||
+                    groupName.isEmpty ||
+                    !_collapsedGroups.contains(groupName))
+                  for (final plan in grouped[groupName]!) _buildPlanCard(plan),
               ],
             ],
           );

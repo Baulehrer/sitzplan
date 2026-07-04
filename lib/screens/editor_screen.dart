@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../models/seating_plan.dart';
 import '../providers/seating_plan_provider.dart';
 import '../widgets/seat_card.dart';
+import '../services/image_service.dart';
+import '../services/import_export_service.dart';
 import '../services/pdf_service.dart';
 import 'seat_detail_screen.dart';
 
@@ -19,6 +21,8 @@ class _EditorScreenState extends State<EditorScreen> {
   // Track which cell is currently being hovered by a drag
   int? _dragOverRow;
   int? _dragOverCol;
+  bool _showSeatNumbers = false;
+  bool _muteEmptySeats = false;
 
   @override
   void initState() {
@@ -49,10 +53,12 @@ class _EditorScreenState extends State<EditorScreen> {
         extraLabel: widget.plan.extraLabel,
         onSave: (seat) async {
           await editor.saveSeat(seat);
+          if (mounted) _showMessage('Gespeichert');
         },
         onDelete: existingSeat != null && !existingSeat.isEmpty
             ? () async {
                 await editor.removeSeat(row, col);
+                if (mounted) _showMessage('Platz geleert');
               }
             : null,
       ),
@@ -62,7 +68,127 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _exportPdf() async {
     final editor = context.read<SeatingPlanEditorProvider>();
     if (editor.plan == null) return;
-    await PdfService().exportAndShare(editor.plan!, editor.seats, context);
+
+    var includePhotos = true;
+    var includeNames = true;
+    var includeExtraInfo = editor.plan!.hasExtraField;
+    final options = await showDialog<PdfExportOptions>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('PDF exportieren'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                value: includePhotos,
+                onChanged: (value) =>
+                    setDialogState(() => includePhotos = value ?? true),
+                title: const Text('Fotos'),
+                contentPadding: EdgeInsets.zero,
+              ),
+              CheckboxListTile(
+                value: includeNames,
+                onChanged: (value) =>
+                    setDialogState(() => includeNames = value ?? true),
+                title: const Text('Namen'),
+                contentPadding: EdgeInsets.zero,
+              ),
+              if (editor.plan!.hasExtraField)
+                CheckboxListTile(
+                  value: includeExtraInfo,
+                  onChanged: (value) =>
+                      setDialogState(() => includeExtraInfo = value ?? true),
+                  title: const Text('Zusatzinfo'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                PdfExportOptions(
+                  includePhotos: includePhotos,
+                  includeNames: includeNames,
+                  includeExtraInfo: includeExtraInfo,
+                ),
+              ),
+              child: const Text('Exportieren'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (options == null || !mounted) return;
+
+    await PdfService().exportAndShare(
+      editor.plan!,
+      editor.seats,
+      context,
+      options: options,
+    );
+  }
+
+  Future<void> _clearSeats() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Alle Plätze leeren?'),
+        content: const Text(
+          'Namen, Zusatzinfos und Fotos werden aus diesem Sitzplan entfernt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Leeren'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await context.read<SeatingPlanEditorProvider>().clearSeats();
+    if (mounted) _showMessage('Sitzplan geleert');
+  }
+
+  Future<void> _importCsv() async {
+    final students = await ImportExportService().pickCsvStudents();
+    if (!mounted || students.isEmpty) return;
+    final added = await context
+        .read<SeatingPlanEditorProvider>()
+        .fillFreeSeatsFromCsv(students);
+    if (mounted) _showMessage('$added Einträge importiert');
+  }
+
+  Future<void> _importPhotos() async {
+    final paths = await ImageService().pickMultipleFromGallery();
+    if (!mounted || paths.isEmpty) return;
+    final added = await context
+        .read<SeatingPlanEditorProvider>()
+        .fillFreeSeatsWithPhotos(paths);
+    for (final unusedPath in paths.skip(added)) {
+      await ImageService().deletePhoto(unusedPath);
+    }
+    if (mounted) _showMessage('$added Fotos eingefügt');
+  }
+
+  void _showMessage(String message, {SnackBarAction? action}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: action,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -75,6 +201,50 @@ class _EditorScreenState extends State<EditorScreen> {
             icon: const Icon(Icons.picture_as_pdf),
             tooltip: 'Als PDF exportieren',
             onPressed: _exportPdf,
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'numbers':
+                  setState(() => _showSeatNumbers = !_showSeatNumbers);
+                  break;
+                case 'muted':
+                  setState(() => _muteEmptySeats = !_muteEmptySeats);
+                  break;
+                case 'csv':
+                  _importCsv();
+                  break;
+                case 'photos':
+                  _importPhotos();
+                  break;
+                case 'clear':
+                  _clearSeats();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(
+                value: 'numbers',
+                checked: _showSeatNumbers,
+                child: const Text('Platznummern'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'muted',
+                checked: _muteEmptySeats,
+                child: const Text('Leere Plätze dezenter'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'csv', child: Text('CSV importieren')),
+              const PopupMenuItem(
+                value: 'photos',
+                child: Text('Fotos importieren'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'clear',
+                child: Text('Alle Plätze leeren'),
+              ),
+            ],
           ),
         ],
       ),
@@ -154,11 +324,29 @@ class _EditorScreenState extends State<EditorScreen> {
       },
       onAcceptWithDetails: (details) async {
         final from = details.data;
+        final snapshots = [
+          SeatSnapshot(
+            row: from.row,
+            col: from.col,
+            seat: editor.getSeat(from.row, from.col),
+          ),
+          SeatSnapshot(row: row, col: col, seat: editor.getSeat(row, col)),
+        ];
         setState(() {
           _dragOverRow = null;
           _dragOverCol = null;
         });
         await editor.moveSeat(from.row, from.col, row, col);
+        if (!mounted) return;
+        _showMessage(
+          'Gespeichert',
+          action: SnackBarAction(
+            label: 'Rückgängig',
+            onPressed: () {
+              editor.restorePositions(snapshots);
+            },
+          ),
+        );
       },
       onMove: (_) {
         if (_dragOverRow != row || _dragOverCol != col) {
@@ -180,6 +368,8 @@ class _EditorScreenState extends State<EditorScreen> {
         final card = SeatCard(
           seat: seat,
           onTap: () => _openSeatDetail(row, col),
+          positionLabel: _showSeatNumbers ? '${row + 1}/${col + 1}' : null,
+          mutedEmpty: _muteEmptySeats,
         );
 
         // If seat is filled, make it draggable

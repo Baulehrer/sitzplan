@@ -194,6 +194,32 @@ class DatabaseService {
     }
   }
 
+  Future<void> replaceSeatAtPosition(
+    Seat? seat,
+    int planId,
+    int row,
+    int col,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'seats',
+        where: 'plan_id = ? AND row = ? AND col = ?',
+        whereArgs: [planId, row, col],
+      );
+
+      if (seat != null && !seat.isEmpty) {
+        await txn.insert(
+          'seats',
+          seat.copyWith(id: null, planId: planId, row: row, col: col).toMap()
+            ..remove('id'),
+        );
+      }
+
+      await _touchPlan(txn, planId);
+    });
+  }
+
   Future<void> moveSeat(
     int planId,
     int fromRow,
@@ -236,8 +262,10 @@ class DatabaseService {
 
   Future<SeatingPlan> duplicatePlan(
     SeatingPlan original,
-    String newName,
-  ) async {
+    String newName, {
+    bool copySeats = true,
+    bool includePhotos = true,
+  }) async {
     final newPlan = SeatingPlan(
       name: newName,
       rows: original.rows,
@@ -247,20 +275,24 @@ class DatabaseService {
     );
     final created = await createPlan(newPlan);
 
-    final seats = await getSeats(original.id!);
-    for (final seat in seats) {
-      final copiedPhotoPath = await _copyPhoto(seat.photoPath);
-      await upsertSeat(
-        Seat(
-          planId: created.id!,
-          row: seat.row,
-          col: seat.col,
-          firstName: seat.firstName,
-          lastName: seat.lastName,
-          photoPath: copiedPhotoPath,
-          extraInfo: seat.extraInfo,
-        ),
-      );
+    if (copySeats) {
+      final seats = await getSeats(original.id!);
+      for (final seat in seats) {
+        final copiedPhotoPath = includePhotos
+            ? await _copyPhoto(seat.photoPath)
+            : null;
+        await upsertSeat(
+          Seat(
+            planId: created.id!,
+            row: seat.row,
+            col: seat.col,
+            firstName: seat.firstName,
+            lastName: seat.lastName,
+            photoPath: copiedPhotoPath,
+            extraInfo: seat.extraInfo,
+          ),
+        );
+      }
     }
 
     return created;

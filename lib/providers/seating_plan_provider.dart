@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import '../models/seating_plan.dart';
 import '../services/database_service.dart';
+import '../services/import_export_service.dart';
 
 class SeatingPlanListProvider extends ChangeNotifier {
   final _db = DatabaseService();
@@ -60,9 +61,16 @@ class SeatingPlanListProvider extends ChangeNotifier {
 
   Future<SeatingPlan> duplicatePlan(
     SeatingPlan original,
-    String newName,
-  ) async {
-    final created = await _db.duplicatePlan(original, newName);
+    String newName, {
+    bool copySeats = true,
+    bool includePhotos = true,
+  }) async {
+    final created = await _db.duplicatePlan(
+      original,
+      newName,
+      copySeats: copySeats,
+      includePhotos: includePhotos,
+    );
     _plans.insert(0, created);
     notifyListeners();
     return created;
@@ -128,6 +136,70 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearSeats() async {
+    if (_plan == null) return;
+    await _db.deleteSeatsForPlan(_plan!.id!);
+    _setSeats([]);
+    notifyListeners();
+  }
+
+  Future<int> fillFreeSeatsFromCsv(List<CsvStudent> students) async {
+    if (_plan == null || students.isEmpty) return 0;
+
+    var added = 0;
+    for (var row = 0; row < _plan!.rows; row++) {
+      for (var col = 0; col < _plan!.columns; col++) {
+        if (added >= students.length) break;
+        final existing = getSeat(row, col);
+        if (existing != null && !existing.isEmpty) continue;
+
+        final student = students[added];
+        await _db.upsertSeat(
+          Seat(
+            planId: _plan!.id!,
+            row: row,
+            col: col,
+            firstName: student.firstName,
+            lastName: student.lastName,
+            extraInfo: _plan!.hasExtraField ? student.extraInfo : null,
+          ),
+        );
+        added++;
+      }
+    }
+
+    _setSeats(await _db.getSeats(_plan!.id!));
+    notifyListeners();
+    return added;
+  }
+
+  Future<int> fillFreeSeatsWithPhotos(List<String> photoPaths) async {
+    if (_plan == null || photoPaths.isEmpty) return 0;
+
+    var added = 0;
+    for (var row = 0; row < _plan!.rows; row++) {
+      for (var col = 0; col < _plan!.columns; col++) {
+        if (added >= photoPaths.length) break;
+        final existing = getSeat(row, col);
+        if (existing != null && !existing.isEmpty) continue;
+
+        await _db.upsertSeat(
+          Seat(
+            planId: _plan!.id!,
+            row: row,
+            col: col,
+            photoPath: photoPaths[added],
+          ),
+        );
+        added++;
+      }
+    }
+
+    _setSeats(await _db.getSeats(_plan!.id!));
+    notifyListeners();
+    return added;
+  }
+
   /// Move a seat to a new position. If target is occupied, swap both.
   Future<void> moveSeat(int fromRow, int fromCol, int toRow, int toCol) async {
     if (fromRow == toRow && fromCol == toCol) return;
@@ -136,6 +208,20 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     if (_plan == null || fromSeat == null || fromSeat.isEmpty) return;
 
     await _db.moveSeat(_plan!.id!, fromRow, fromCol, toRow, toCol);
+    _setSeats(await _db.getSeats(_plan!.id!));
+    notifyListeners();
+  }
+
+  Future<void> restorePositions(List<SeatSnapshot> snapshots) async {
+    if (_plan == null) return;
+    for (final snapshot in snapshots) {
+      await _db.replaceSeatAtPosition(
+        snapshot.seat,
+        _plan!.id!,
+        snapshot.row,
+        snapshot.col,
+      );
+    }
     _setSeats(await _db.getSeats(_plan!.id!));
     notifyListeners();
   }
@@ -158,4 +244,16 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   }
 
   String _positionKey(int row, int col) => '$row:$col';
+}
+
+class SeatSnapshot {
+  final int row;
+  final int col;
+  final Seat? seat;
+
+  const SeatSnapshot({
+    required this.row,
+    required this.col,
+    required this.seat,
+  });
 }

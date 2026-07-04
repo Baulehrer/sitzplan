@@ -9,8 +9,9 @@ class PdfService {
   Future<void> exportAndShare(
     SeatingPlan plan,
     List<Seat> seats,
-    BuildContext context,
-  ) async {
+    BuildContext context, {
+    PdfExportOptions options = const PdfExportOptions(),
+  }) async {
     final pdf = pw.Document();
 
     // Build seat lookup
@@ -22,7 +23,7 @@ class PdfService {
     // Load photos
     final photoCache = <String, pw.MemoryImage>{};
     for (final seat in seats) {
-      if (seat.photoPath != null) {
+      if (options.includePhotos && seat.photoPath != null) {
         final file = File(seat.photoPath!);
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
@@ -67,7 +68,8 @@ class PdfService {
                               seatMap['${r}_$c'],
                               photoCache,
                               plan.rows,
-                              plan.hasExtraField,
+                              plan.hasExtraField && options.includeExtraInfo,
+                              options,
                             ),
                         ],
                       ),
@@ -82,7 +84,7 @@ class PdfService {
 
     await Printing.layoutPdf(
       onLayout: (format) => pdf.save(),
-      name: '${plan.name}.pdf',
+      name: _fileName(plan),
     );
   }
 
@@ -91,6 +93,7 @@ class PdfService {
     Map<String, pw.MemoryImage> photoCache,
     int totalRows,
     bool hasExtraField,
+    PdfExportOptions options,
   ) {
     final cellHeight =
         (PdfPageFormat.a4.landscape.availableHeight - 52) / totalRows;
@@ -109,7 +112,9 @@ class PdfService {
         mainAxisAlignment: pw.MainAxisAlignment.center,
         children: [
           // Photo — large
-          if (seat.photoPath != null && photoCache.containsKey(seat.photoPath))
+          if (options.includePhotos &&
+              seat.photoPath != null &&
+              photoCache.containsKey(seat.photoPath))
             pw.Container(
               width: photoSize,
               height: photoSize,
@@ -143,7 +148,9 @@ class PdfService {
           pw.SizedBox(height: 2),
 
           // Vorname — kleiner
-          if (seat.firstName != null && seat.firstName!.isNotEmpty)
+          if (options.includeNames &&
+              seat.firstName != null &&
+              seat.firstName!.isNotEmpty)
             pw.Text(
               seat.firstName!,
               style: const pw.TextStyle(fontSize: 7),
@@ -152,7 +159,9 @@ class PdfService {
             ),
 
           // Nachname — größer und fett
-          if (seat.lastName != null && seat.lastName!.isNotEmpty)
+          if (options.includeNames &&
+              seat.lastName != null &&
+              seat.lastName!.isNotEmpty)
             pw.Text(
               seat.lastName!,
               style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
@@ -180,4 +189,29 @@ class PdfService {
     final l = seat.lastName?.isNotEmpty == true ? seat.lastName![0] : '';
     return '$f$l'.toUpperCase();
   }
+
+  String _fileName(SeatingPlan plan) {
+    final now = DateTime.now();
+    final date =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    final safeName = plan.name
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9ÄÖÜäöüß_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return '${safeName.isEmpty ? 'Sitzplan' : safeName}_Sitzplan_$date.pdf';
+  }
+}
+
+class PdfExportOptions {
+  final bool includePhotos;
+  final bool includeNames;
+  final bool includeExtraInfo;
+
+  const PdfExportOptions({
+    this.includePhotos = true,
+    this.includeNames = true,
+    this.includeExtraInfo = true,
+  });
 }
