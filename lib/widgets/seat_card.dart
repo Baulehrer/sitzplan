@@ -7,6 +7,7 @@ class SeatCard extends StatelessWidget {
   final VoidCallback onTap;
   final String? positionLabel;
   final bool mutedEmpty;
+  final List<String> extraLabels;
 
   const SeatCard({
     super.key,
@@ -14,6 +15,7 @@ class SeatCard extends StatelessWidget {
     required this.onTap,
     this.positionLabel,
     this.mutedEmpty = false,
+    this.extraLabels = const [],
   });
 
   @override
@@ -92,30 +94,16 @@ class SeatCard extends StatelessWidget {
             children: [
               // Photo — large
               Expanded(
-                flex: 5,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 8, 4),
                   child: _buildPhoto(theme),
                 ),
               ),
-              // First name — smaller
-              if (seat!.firstName != null && seat!.firstName!.isNotEmpty)
+              if (seat!.displayName.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+                  padding: const EdgeInsets.fromLTRB(5, 1, 5, 0),
                   child: Text(
-                    seat!.firstName!,
-                    style: theme.textTheme.labelSmall,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              // Last name — larger and bold
-              if (seat!.lastName != null && seat!.lastName!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-                  child: Text(
-                    seat!.lastName!,
+                    seat!.displayName,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -124,15 +112,17 @@ class SeatCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              // Extra info — small, muted
-              if (seat!.extraInfo != null && seat!.extraInfo!.isNotEmpty)
+              for (final extra in _visibleExtras)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
+                  padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
                   child: Text(
-                    seat!.extraInfo!,
+                    extra.label.isEmpty
+                        ? extra.value
+                        : '${extra.label}: ${extra.value}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.outline,
-                      fontSize: 9,
+                      fontSize: 8.5,
+                      height: 1.05,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 1,
@@ -146,6 +136,19 @@ class SeatCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  List<({String label, String value})> get _visibleExtras {
+    if (seat == null) return const [];
+    final values = seat!.extraInfos;
+    return [
+      for (var index = 0; index < values.length; index++)
+        if (values[index]?.isNotEmpty == true)
+          (
+            label: index < extraLabels.length ? extraLabels[index] : '',
+            value: values[index]!,
+          ),
+    ];
   }
 
   Widget _buildPositionLabel(ThemeData theme) {

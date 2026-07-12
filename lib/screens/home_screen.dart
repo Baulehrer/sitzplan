@@ -6,6 +6,7 @@ import '../providers/seating_plan_provider.dart';
 import '../models/seating_plan.dart';
 import '../services/import_export_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/theme_picker.dart';
 import 'editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,11 +36,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showNewPlanDialog() {
     final nameController = TextEditingController();
-    final extraLabelController = TextEditingController();
+    final extraLabelControllers = List.generate(
+      3,
+      (_) => TextEditingController(),
+    );
     String groupName = '';
     int rows = 4;
     int columns = 8;
-    bool hasExtraField = false;
+    int extraFieldCount = 0;
 
     // Get existing group names for suggestions
     final provider = context.read<SeatingPlanListProvider>();
@@ -153,21 +157,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  SwitchListTile(
-                    title: const Text('Zusatzinfo pro Schüler'),
-                    subtitle: const Text('z.B. Betrieb, Instrument, ...'),
-                    value: hasExtraField,
-                    onChanged: (v) => setDialogState(() => hasExtraField = v),
-                    contentPadding: EdgeInsets.zero,
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Zusatzfelder pro Schüler',
+                      style: Theme.of(ctx).textTheme.titleMedium,
+                    ),
                   ),
-                  if (hasExtraField) ...[
-                    const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Bis zu drei eigene Angaben unter Name und Foto.',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Keine')),
+                      ButtonSegment(value: 1, label: Text('1')),
+                      ButtonSegment(value: 2, label: Text('2')),
+                      ButtonSegment(value: 3, label: Text('3')),
+                    ],
+                    selected: {extraFieldCount},
+                    onSelectionChanged: (values) =>
+                        setDialogState(() => extraFieldCount = values.first),
+                  ),
+                  for (var index = 0; index < extraFieldCount; index++) ...[
+                    const SizedBox(height: 10),
                     TextField(
-                      controller: extraLabelController,
-                      decoration: const InputDecoration(
-                        labelText: 'Bezeichnung des Zusatzfelds',
-                        hintText: 'z.B. Betrieb',
-                        border: OutlineInputBorder(),
+                      controller: extraLabelControllers[index],
+                      decoration: InputDecoration(
+                        labelText: 'Bezeichnung ${index + 1}',
+                        hintText: const [
+                          'z.B. Betrieb',
+                          'z.B. Instrument',
+                          'z.B. Hinweis',
+                        ][index],
                       ),
                     ),
                   ],
@@ -183,19 +210,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () async {
                   final name = nameController.text.trim();
                   if (name.isEmpty) return;
-                  final extraLabel = hasExtraField
-                      ? extraLabelController.text.trim()
-                      : null;
-                  if (hasExtraField &&
-                      (extraLabel == null || extraLabel.isEmpty)) {
-                    return;
-                  }
+                  final labels = [
+                    for (var index = 0; index < extraFieldCount; index++)
+                      extraLabelControllers[index].text.trim(),
+                  ];
+                  if (labels.any((label) => label.isEmpty)) return;
                   final group = groupName.trim();
                   final plan = await provider.createPlan(
                     name,
                     rows,
                     columns,
-                    extraLabel: extraLabel,
+                    extraLabel: labels.isNotEmpty ? labels[0] : null,
+                    extraLabel2: labels.length > 1 ? labels[1] : null,
+                    extraLabel3: labels.length > 2 ? labels[2] : null,
                     groupName: group.isEmpty ? null : group,
                   );
                   if (!ctx.mounted) return;
@@ -209,7 +236,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ).whenComplete(() {
         nameController.dispose();
-        extraLabelController.dispose();
+        for (final controller in extraLabelControllers) {
+          controller.dispose();
+        }
       }),
     );
   }
@@ -265,6 +294,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 _showChangeGroupDialog(plan);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('Zusatzfelder festlegen'),
+              subtitle: Text(
+                plan.extraLabels.isEmpty
+                    ? 'Keine Zusatzfelder'
+                    : plan.extraLabels.join(' · '),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showExtraFieldsDialog(plan);
+              },
+            ),
             const Divider(),
             ListTile(
               leading: Icon(
@@ -283,6 +325,89 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showExtraFieldsDialog(SeatingPlan plan) {
+    final existing = plan.extraLabels;
+    final controllers = List.generate(
+      3,
+      (index) => TextEditingController(
+        text: index < existing.length ? existing[index] : '',
+      ),
+    );
+    var fieldCount = existing.length;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Zusatzfelder festlegen'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Die Bezeichnungen erscheinen bei der Eingabe und zusammen mit ausgefüllten Werten im Sitzplan und PDF.',
+                  ),
+                  const SizedBox(height: 16),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Keine')),
+                      ButtonSegment(value: 1, label: Text('1')),
+                      ButtonSegment(value: 2, label: Text('2')),
+                      ButtonSegment(value: 3, label: Text('3')),
+                    ],
+                    selected: {fieldCount},
+                    onSelectionChanged: (values) =>
+                        setDialogState(() => fieldCount = values.first),
+                  ),
+                  for (var index = 0; index < fieldCount; index++) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controllers[index],
+                      decoration: InputDecoration(
+                        labelText: 'Bezeichnung ${index + 1}',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Abbrechen'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final labels = [
+                    for (var index = 0; index < fieldCount; index++)
+                      controllers[index].text.trim(),
+                  ];
+                  if (labels.any((label) => label.isEmpty)) return;
+                  await context.read<SeatingPlanListProvider>().updatePlan(
+                    plan.copyWith(
+                      extraLabel: labels.isNotEmpty ? labels[0] : null,
+                      extraLabel2: labels.length > 1 ? labels[1] : null,
+                      extraLabel3: labels.length > 2 ? labels[2] : null,
+                      clearExtraLabel: labels.isEmpty,
+                      clearExtraLabel2: labels.length < 2,
+                      clearExtraLabel3: labels.length < 3,
+                    ),
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Felder speichern'),
+              ),
+            ],
+          ),
+        ),
+      ).whenComplete(() {
+        for (final controller in controllers) {
+          controller.dispose();
+        }
+      }),
     );
   }
 
@@ -513,6 +638,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: compact ? const Text('Sitzplan') : null,
         actions: [
+          const ThemePickerButton(),
           IconButton(
             icon: const Icon(Icons.archive_outlined),
             tooltip: 'Backup exportieren',

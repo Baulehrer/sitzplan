@@ -10,13 +10,23 @@ class CsvStudent {
   final String? firstName;
   final String? lastName;
   final String? extraInfo;
+  final String? extraInfo2;
+  final String? extraInfo3;
 
-  const CsvStudent({this.firstName, this.lastName, this.extraInfo});
+  const CsvStudent({
+    this.firstName,
+    this.lastName,
+    this.extraInfo,
+    this.extraInfo2,
+    this.extraInfo3,
+  });
 
   bool get isEmpty =>
       (firstName == null || firstName!.isEmpty) &&
       (lastName == null || lastName!.isEmpty) &&
-      (extraInfo == null || extraInfo!.isEmpty);
+      (extraInfo == null || extraInfo!.isEmpty) &&
+      (extraInfo2 == null || extraInfo2!.isEmpty) &&
+      (extraInfo3 == null || extraInfo3!.isEmpty);
 }
 
 class ImportExportService {
@@ -52,6 +62,8 @@ class ImportExportService {
             firstName: value(0),
             lastName: value(1),
             extraInfo: value(2),
+            extraInfo2: value(3),
+            extraInfo3: value(4),
           );
         })
         .where((student) => !student.isEmpty)

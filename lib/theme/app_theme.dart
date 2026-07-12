@@ -11,37 +11,57 @@ abstract final class UiBreakpoints {
       MediaQuery.sizeOf(context).width >= expanded;
 }
 
+enum AppPalette {
+  board('Tafelblau', Color(0xFF17324D), Color(0xFFF2B84B)),
+  forest('Waldgrün', Color(0xFF315C45), Color(0xFFE3A33B)),
+  berry('Beere', Color(0xFF663B68), Color(0xFFE6A55D));
+
+  final String label;
+  final Color primary;
+  final Color accent;
+
+  const AppPalette(this.label, this.primary, this.accent);
+}
+
 abstract final class AppColors {
-  static const boardBlue = Color(0xFF17324D);
   static const paper = Color(0xFFF6F8F5);
-  static const chalk = Color(0xFFE8F0E8);
-  static const markerYellow = Color(0xFFF2B84B);
   static const correctionRed = Color(0xFFC74B50);
   static const ink = Color(0xFF16202A);
 }
 
 class AppTheme {
-  static ThemeData get light => _theme(Brightness.light);
-  static ThemeData get dark => _theme(Brightness.dark);
+  static ThemeData get light => lightFor(AppPalette.board);
+  static ThemeData get dark => darkFor(AppPalette.board);
 
-  static ThemeData _theme(Brightness brightness) {
+  static ThemeData lightFor(AppPalette palette) =>
+      _theme(Brightness.light, palette);
+
+  static ThemeData darkFor(AppPalette palette) =>
+      _theme(Brightness.dark, palette);
+
+  static ThemeData _theme(Brightness brightness, AppPalette palette) {
     final dark = brightness == Brightness.dark;
-    final scheme = ColorScheme(
+    final seedScheme = ColorScheme.fromSeed(
+      seedColor: palette.primary,
       brightness: brightness,
-      primary: dark ? const Color(0xFF9EC9EF) : AppColors.boardBlue,
+    );
+    final scheme = seedScheme.copyWith(
+      primary: dark ? _lighten(palette.primary, .46) : palette.primary,
       onPrimary: dark ? AppColors.ink : Colors.white,
       primaryContainer: dark
-          ? const Color(0xFF284A68)
-          : const Color(0xFFDCEAF5),
-      onPrimaryContainer: dark ? const Color(0xFFE7F3FF) : AppColors.boardBlue,
-      secondary: AppColors.markerYellow,
+          ? _darken(palette.primary, .14)
+          : _lighten(palette.primary, .78),
+      onPrimaryContainer: dark
+          ? _lighten(palette.primary, .82)
+          : _darken(palette.primary, .08),
+      secondary: palette.accent,
       onSecondary: AppColors.ink,
       secondaryContainer: dark
-          ? const Color(0xFF5B451B)
-          : const Color(0xFFFFE7AF),
-      onSecondaryContainer: dark ? const Color(0xFFFFE7AF) : AppColors.ink,
-      tertiary: dark ? const Color(0xFFAED8B6) : const Color(0xFF376B4B),
-      onTertiary: dark ? AppColors.ink : Colors.white,
+          ? _darken(palette.accent, .48)
+          : _lighten(palette.accent, .62),
+      onSecondaryContainer: dark
+          ? _lighten(palette.accent, .62)
+          : AppColors.ink,
       error: dark ? const Color(0xFFFFB3B5) : AppColors.correctionRed,
       onError: dark ? AppColors.ink : Colors.white,
       surface: dark ? const Color(0xFF111A22) : AppColors.paper,
@@ -66,11 +86,6 @@ class AppTheme {
           : const Color(0xFF52616A),
       outline: dark ? const Color(0xFF82919B) : const Color(0xFF6D7B82),
       outlineVariant: dark ? const Color(0xFF3A4A55) : const Color(0xFFC4CFCC),
-      shadow: Colors.black,
-      scrim: Colors.black,
-      inverseSurface: dark ? AppColors.paper : AppColors.ink,
-      onInverseSurface: dark ? AppColors.ink : AppColors.paper,
-      inversePrimary: dark ? AppColors.boardBlue : const Color(0xFF9EC9EF),
       surfaceTint: Colors.transparent,
     );
 
@@ -133,10 +148,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: scheme.surfaceContainerLowest,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: scheme.outlineVariant),
@@ -178,4 +190,10 @@ class AppTheme {
       dividerTheme: DividerThemeData(color: scheme.outlineVariant),
     );
   }
+
+  static Color _lighten(Color color, double amount) =>
+      Color.lerp(color, Colors.white, amount)!;
+
+  static Color _darken(Color color, double amount) =>
+      Color.lerp(color, Colors.black, amount)!;
 }

@@ -16,11 +16,18 @@ class DatabaseService {
 
   final _uuid = const Uuid();
   Database? _db;
+  Future<Database>? _openingDatabase;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
-    _db = await _initDatabase();
-    return _db!;
+    if (_openingDatabase != null) return _openingDatabase!;
+    _openingDatabase = _initDatabase();
+    try {
+      _db = await _openingDatabase;
+      return _db!;
+    } finally {
+      _openingDatabase = null;
+    }
   }
 
   Future<Database> _initDatabase() async {
@@ -39,7 +46,7 @@ class DatabaseService {
 
     return await openDatabase(
       dbPath,
-      version: 4,
+      version: 6,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -57,6 +64,8 @@ class DatabaseService {
             rows INTEGER NOT NULL,
             columns INTEGER NOT NULL,
             extra_label TEXT,
+            extra_label_2 TEXT,
+            extra_label_3 TEXT,
             group_name TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -72,6 +81,8 @@ class DatabaseService {
             last_name TEXT,
             photo_path TEXT,
             extra_info TEXT,
+            extra_info_2 TEXT,
+            extra_info_3 TEXT,
             FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
           )
         ''');
@@ -79,6 +90,12 @@ class DatabaseService {
       'CREATE UNIQUE INDEX seats_plan_position '
       'ON seats(plan_id, row, col)',
     );
+    await db.execute('''
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
   }
 
   @visibleForTesting
@@ -106,6 +123,40 @@ class DatabaseService {
         'ON seats(plan_id, row, col)',
       );
     }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 6 && newVersion >= 6) {
+      await db.execute('ALTER TABLE plans ADD COLUMN extra_label_2 TEXT');
+      await db.execute('ALTER TABLE plans ADD COLUMN extra_label_3 TEXT');
+      await db.execute('ALTER TABLE seats ADD COLUMN extra_info_2 TEXT');
+      await db.execute('ALTER TABLE seats ADD COLUMN extra_info_3 TEXT');
+    }
+  }
+
+  Future<String?> getSetting(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String;
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert('app_settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   // --- Plans ---
@@ -335,6 +386,8 @@ class DatabaseService {
       rows: original.rows,
       columns: original.columns,
       extraLabel: original.extraLabel,
+      extraLabel2: original.extraLabel2,
+      extraLabel3: original.extraLabel3,
       groupName: original.groupName,
     );
     final created = await createPlan(newPlan);
@@ -354,6 +407,8 @@ class DatabaseService {
             lastName: seat.lastName,
             photoPath: copiedPhotoPath,
             extraInfo: seat.extraInfo,
+            extraInfo2: seat.extraInfo2,
+            extraInfo3: seat.extraInfo3,
           ),
         );
       }

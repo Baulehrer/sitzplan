@@ -12,7 +12,7 @@ void main() {
     database = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 6,
         onCreate: DatabaseService.createSchema,
       ),
     );
@@ -60,5 +60,36 @@ void main() {
     seats = await service.getSeats(plan.id!);
     expect(seats.singleWhere((seat) => seat.col == 0).firstName, 'Ada');
     expect(seats.singleWhere((seat) => seat.col == 1).firstName, 'Grace');
+  });
+
+  test('appearance settings persist in the database', () async {
+    expect(await service.getSetting('appearance_palette'), isNull);
+
+    await service.setSetting('appearance_palette', 'forest');
+
+    expect(await service.getSetting('appearance_palette'), 'forest');
+  });
+
+  test('version 5 migration creates appearance settings', () async {
+    await database.execute('DROP TABLE app_settings');
+
+    await DatabaseService.upgradeSchema(database, 4, 5);
+    await service.setSetting('appearance_mode', 'dark');
+
+    expect(await service.getSetting('appearance_mode'), 'dark');
+  });
+
+  test('schema contains all three custom fields', () async {
+    final planColumns = await database.rawQuery('PRAGMA table_info(plans)');
+    final seatColumns = await database.rawQuery('PRAGMA table_info(seats)');
+
+    expect(
+      planColumns.map((column) => column['name']),
+      containsAll(['extra_label', 'extra_label_2', 'extra_label_3']),
+    );
+    expect(
+      seatColumns.map((column) => column['name']),
+      containsAll(['extra_info', 'extra_info_2', 'extra_info_3']),
+    );
   });
 }

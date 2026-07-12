@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/material.dart' show BuildContext;
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -27,7 +30,8 @@ class PdfService {
         final file = File(seat.photoPath!);
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
-          photoCache[seat.photoPath!] = pw.MemoryImage(bytes);
+          final adjustedBytes = preparePhotoForExport(bytes, options);
+          photoCache[seat.photoPath!] = pw.MemoryImage(adjustedBytes);
         }
       }
     }
@@ -55,12 +59,16 @@ class PdfService {
               // Grid — Raster immer sichtbar (alle Zellen haben Rahmen)
               pw.Expanded(
                 child: pw.Table(
+                  columnWidths: {
+                    for (int c = 0; c < plan.columns; c++)
+                      c: const pw.FlexColumnWidth(1),
+                  },
                   border: pw.TableBorder.all(
                     color: PdfColors.grey600,
                     width: 0.8,
                   ),
                   children: [
-                    for (int r = 0; r < plan.rows; r++)
+                    for (int r = plan.rows - 1; r >= 0; r--)
                       pw.TableRow(
                         children: [
                           for (int c = 0; c < plan.columns; c++)
@@ -68,7 +76,8 @@ class PdfService {
                               seatMap['${r}_$c'],
                               photoCache,
                               plan.rows,
-                              plan.hasExtraField && options.includeExtraInfo,
+                              plan.columns,
+                              plan.extraLabels,
                               options,
                             ),
                         ],
@@ -76,6 +85,8 @@ class PdfService {
                   ],
                 ),
               ),
+              pw.SizedBox(height: 8),
+              _buildBoardMarker(),
             ],
           );
         },
@@ -92,18 +103,33 @@ class PdfService {
     Seat? seat,
     Map<String, pw.MemoryImage> photoCache,
     int totalRows,
-    bool hasExtraField,
+    int totalColumns,
+    List<String> extraLabels,
     PdfExportOptions options,
   ) {
     final cellHeight =
-        (PdfPageFormat.a4.landscape.availableHeight - 52) / totalRows;
-    // Photo takes most of the cell
-    final photoSize = cellHeight * 0.65;
+        (PdfPageFormat.a4.landscape.availableHeight - 76) / totalRows;
 
     // Empty cell — still shows the grid border
     if (seat == null || seat.isEmpty) {
       return pw.Container(height: cellHeight);
     }
+
+    final visibleExtras = <({String label, String value})>[
+      if (options.includeExtraInfo)
+        for (var index = 0; index < seat.extraInfos.length; index++)
+          if (seat.extraInfos[index]?.isNotEmpty == true &&
+              index < extraLabels.length)
+            (label: extraLabels[index], value: seat.extraInfos[index]!),
+    ];
+    final hasName = options.includeNames && seat.displayName.isNotEmpty;
+    final textHeight = (hasName ? 11.0 : 0) + visibleExtras.length * 7.0;
+    final cellWidth =
+        (PdfPageFormat.a4.landscape.availableWidth - 40) / totalColumns;
+    final photoSize = math.max(
+      10.0,
+      math.min(cellWidth - 8, cellHeight - textHeight - 8),
+    );
 
     return pw.Container(
       height: cellHeight,
@@ -147,41 +173,82 @@ class PdfService {
             ),
           pw.SizedBox(height: 2),
 
-          // Vorname — kleiner
-          if (options.includeNames &&
-              seat.firstName != null &&
-              seat.firstName!.isNotEmpty)
+          if (hasName)
             pw.Text(
-              seat.firstName!,
-              style: const pw.TextStyle(fontSize: 7),
+              seat.displayName,
+              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.center,
               maxLines: 1,
             ),
-
-          // Nachname — größer und fett
-          if (options.includeNames &&
-              seat.lastName != null &&
-              seat.lastName!.isNotEmpty)
+          for (final extra in visibleExtras)
             pw.Text(
-              seat.lastName!,
-              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
-              maxLines: 1,
-            ),
-
-          // Extra-Info — klein, unter dem Namen
-          if (hasExtraField &&
-              seat.extraInfo != null &&
-              seat.extraInfo!.isNotEmpty)
-            pw.Text(
-              seat.extraInfo!,
-              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+              '${extra.label}: ${extra.value}',
+              style: const pw.TextStyle(
+                fontSize: 5.5,
+                color: PdfColors.grey700,
+              ),
               textAlign: pw.TextAlign.center,
               maxLines: 1,
             ),
         ],
       ),
     );
+  }
+
+  pw.Widget _buildBoardMarker() => pw.Row(
+    children: [
+      pw.Expanded(child: pw.Divider(color: PdfColors.grey600, thickness: 1.4)),
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 10),
+        child: pw.Text(
+          'TAFEL · LEHRERPOSITION',
+          style: pw.TextStyle(
+            fontSize: 7,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.grey700,
+          ),
+        ),
+      ),
+      pw.Expanded(child: pw.Divider(color: PdfColors.grey600, thickness: 1.4)),
+    ],
+  );
+
+  Uint8List preparePhotoForExport(Uint8List bytes, PdfExportOptions options) {
+    if (options.photoMode == PdfPhotoMode.original) return bytes;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+
+    var brightness = options.photoBrightness;
+    var contrast = options.photoContrast;
+    var gamma = options.photoGamma;
+    if (options.photoMode == PdfPhotoMode.auto) {
+      final luminance = _averageLuminance(decoded);
+      brightness = (0.58 / luminance.clamp(0.08, 0.85)).clamp(0.88, 3.0);
+      contrast = luminance < 0.22 ? 0.92 : 1.06;
+      gamma = luminance < 0.22 ? 0.70 : (luminance < 0.45 ? 0.82 : 0.94);
+    }
+
+    final adjusted = img.adjustColor(
+      decoded,
+      brightness: brightness,
+      contrast: contrast,
+      gamma: gamma,
+    );
+    return Uint8List.fromList(img.encodeJpg(adjusted, quality: 92));
+  }
+
+  double _averageLuminance(img.Image image) {
+    final stepX = (image.width / 80).ceil().clamp(1, image.width);
+    final stepY = (image.height / 80).ceil().clamp(1, image.height);
+    var sum = 0.0;
+    var count = 0;
+    for (var y = 0; y < image.height; y += stepY) {
+      for (var x = 0; x < image.width; x += stepX) {
+        sum += image.getPixel(x, y).luminanceNormalized;
+        count++;
+      }
+    }
+    return count == 0 ? 0.5 : sum / count;
   }
 
   String _initials(Seat seat) {
@@ -208,10 +275,20 @@ class PdfExportOptions {
   final bool includePhotos;
   final bool includeNames;
   final bool includeExtraInfo;
+  final PdfPhotoMode photoMode;
+  final double photoBrightness;
+  final double photoContrast;
+  final double photoGamma;
 
   const PdfExportOptions({
     this.includePhotos = true,
     this.includeNames = true,
     this.includeExtraInfo = true,
+    this.photoMode = PdfPhotoMode.auto,
+    this.photoBrightness = 1,
+    this.photoContrast = 1,
+    this.photoGamma = 1,
   });
 }
+
+enum PdfPhotoMode { original, auto, manual }

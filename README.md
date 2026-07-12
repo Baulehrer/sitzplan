@@ -37,16 +37,16 @@ flutter test
 
 ## Release
 
-Aktuelle Version: `1.2.0`
+Aktuelle Version: `1.3.0`
 
-GitHub Actions erstellt bei Tags wie `v1.2.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
+GitHub Actions erstellt bei Tags wie `v1.3.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
 
 Desktop-Artefakte:
 
-- Windows: `Sitzplan-1.2.0-Setup.exe`
-- Linux: `Sitzplan-1.2.0-x86_64.AppImage`
-- macOS: `Sitzplan-1.2.0-macos.dmg`
-- Android: `Sitzplan-1.2.0-android.apk`
+- Windows: `Sitzplan-1.3.0-Setup.exe`
+- Linux: `Sitzplan-1.3.0-x86_64.AppImage`
+- macOS: `Sitzplan-1.3.0-macos.dmg`
+- Android: `Sitzplan-1.3.0-android.apk`
 
 Der Windows-Installer und die macOS-DMG sind aktuell nicht signiert. Auf macOS kann Gatekeeper deshalb beim ersten Start eine Sicherheitsabfrage anzeigen. Das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert; für TestFlight oder App Store sind zusätzliche Signing-Secrets nötig. Die Android-APK nutzt aktuell die im Projekt konfigurierte Debug-Signierung für Release-Builds.
 

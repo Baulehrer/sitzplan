@@ -47,7 +47,7 @@ class _EditorScreenState extends State<EditorScreen> {
       planId: widget.plan.id!,
       row: row,
       col: col,
-      extraLabel: widget.plan.extraLabel,
+      extraLabels: widget.plan.extraLabels,
       onSave: (seat) async {
         await editor.saveSeat(seat);
         if (mounted) _showMessage('Gespeichert');
@@ -89,37 +89,147 @@ class _EditorScreenState extends State<EditorScreen> {
     var includePhotos = true;
     var includeNames = true;
     var includeExtraInfo = editor.plan!.hasExtraField;
+    var photoMode = PdfPhotoMode.auto;
+    var photoBrightness = 1.0;
+    var photoContrast = 1.0;
+    var photoGamma = 1.0;
     final options = await showDialog<PdfExportOptions>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('PDF exportieren'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CheckboxListTile(
-                value: includePhotos,
-                onChanged: (value) =>
-                    setDialogState(() => includePhotos = value ?? true),
-                title: const Text('Fotos'),
-                contentPadding: EdgeInsets.zero,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CheckboxListTile(
+                    value: includePhotos,
+                    onChanged: (value) =>
+                        setDialogState(() => includePhotos = value ?? true),
+                    title: const Text('Fotos anzeigen'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    value: includeNames,
+                    onChanged: (value) =>
+                        setDialogState(() => includeNames = value ?? true),
+                    title: const Text('Namen anzeigen'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (editor.plan!.hasExtraField)
+                    CheckboxListTile(
+                      value: includeExtraInfo,
+                      onChanged: (value) => setDialogState(
+                        () => includeExtraInfo = value ?? true,
+                      ),
+                      title: const Text('Zusatzinfo anzeigen'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  if (includePhotos) ...[
+                    const Divider(height: 28),
+                    Text(
+                      'Fotos aufhellen',
+                      style: Theme.of(ctx).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Die Korrektur gilt nur für diese PDF. Originalfotos bleiben unverändert.',
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SegmentedButton<PdfPhotoMode>(
+                        segments: const [
+                          ButtonSegment(
+                            value: PdfPhotoMode.original,
+                            label: Text('Original'),
+                          ),
+                          ButtonSegment(
+                            value: PdfPhotoMode.auto,
+                            icon: Icon(Icons.auto_fix_high, size: 18),
+                            label: Text('Auto'),
+                          ),
+                          ButtonSegment(
+                            value: PdfPhotoMode.manual,
+                            label: Text('Manuell'),
+                          ),
+                        ],
+                        selected: {photoMode},
+                        onSelectionChanged: (values) =>
+                            setDialogState(() => photoMode = values.first),
+                      ),
+                    ),
+                    if (photoMode == PdfPhotoMode.auto)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 18,
+                              color: Theme.of(ctx).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Auto analysiert jedes Foto einzeln und hellt besonders dunkle Aufnahmen stärker auf.',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (photoMode == PdfPhotoMode.manual) ...[
+                      const SizedBox(height: 12),
+                      _buildAdjustmentSlider(
+                        context: ctx,
+                        label: 'Helligkeit',
+                        value: photoBrightness,
+                        min: .5,
+                        max: 1.8,
+                        onChanged: (value) =>
+                            setDialogState(() => photoBrightness = value),
+                      ),
+                      _buildAdjustmentSlider(
+                        context: ctx,
+                        label: 'Kontrast',
+                        value: photoContrast,
+                        min: .5,
+                        max: 1.8,
+                        onChanged: (value) =>
+                            setDialogState(() => photoContrast = value),
+                      ),
+                      _buildAdjustmentSlider(
+                        context: ctx,
+                        label: 'Gamma',
+                        value: photoGamma,
+                        min: .5,
+                        max: 1.5,
+                        onChanged: (value) =>
+                            setDialogState(() => photoGamma = value),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setDialogState(() {
+                            photoBrightness = 1;
+                            photoContrast = 1;
+                            photoGamma = 1;
+                          }),
+                          icon: const Icon(Icons.restart_alt),
+                          label: const Text('Regler zurücksetzen'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
               ),
-              CheckboxListTile(
-                value: includeNames,
-                onChanged: (value) =>
-                    setDialogState(() => includeNames = value ?? true),
-                title: const Text('Namen'),
-                contentPadding: EdgeInsets.zero,
-              ),
-              if (editor.plan!.hasExtraField)
-                CheckboxListTile(
-                  value: includeExtraInfo,
-                  onChanged: (value) =>
-                      setDialogState(() => includeExtraInfo = value ?? true),
-                  title: const Text('Zusatzinfo'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -133,6 +243,10 @@ class _EditorScreenState extends State<EditorScreen> {
                   includePhotos: includePhotos,
                   includeNames: includeNames,
                   includeExtraInfo: includeExtraInfo,
+                  photoMode: photoMode,
+                  photoBrightness: photoBrightness,
+                  photoContrast: photoContrast,
+                  photoGamma: photoGamma,
                 ),
               ),
               child: const Text('Exportieren'),
@@ -154,6 +268,33 @@ class _EditorScreenState extends State<EditorScreen> {
       if (mounted) _showMessage('PDF konnte nicht erstellt werden: $error');
     }
   }
+
+  Widget _buildAdjustmentSlider({
+    required BuildContext context,
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+  }) => Row(
+    children: [
+      SizedBox(width: 86, child: Text(label)),
+      Expanded(
+        child: Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: ((max - min) * 10).round(),
+          label: value.toStringAsFixed(1),
+          onChanged: onChanged,
+        ),
+      ),
+      SizedBox(
+        width: 34,
+        child: Text(value.toStringAsFixed(1), textAlign: TextAlign.end),
+      ),
+    ],
+  );
 
   Future<void> _clearSeats() async {
     final confirmed = await showDialog<bool>(
@@ -407,9 +548,7 @@ class _EditorScreenState extends State<EditorScreen> {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    _buildRoomFront(),
-                    const SizedBox(height: 14),
-                    for (int row = 0; row < widget.plan.rows; row++)
+                    for (int row = widget.plan.rows - 1; row >= 0; row--)
                       Padding(
                         padding: EdgeInsets.only(
                           bottom: row < widget.plan.rows - 1 ? gap : 0,
@@ -438,6 +577,8 @@ class _EditorScreenState extends State<EditorScreen> {
                           ],
                         ),
                       ),
+                    const SizedBox(height: 14),
+                    _buildRoomFront(),
                   ],
                 ),
               ),
@@ -565,6 +706,7 @@ class _EditorScreenState extends State<EditorScreen> {
       builder: (context, candidateData, rejectedData) {
         final card = SeatCard(
           seat: seat,
+          extraLabels: widget.plan.extraLabels,
           onTap: () => _openSeatDetail(row, col),
           positionLabel: _showSeatNumbers ? '${row + 1}/${col + 1}' : null,
           mutedEmpty: _muteEmptySeats,

@@ -65,8 +65,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Alexandra'), findsOneWidget);
-    expect(find.text('Mustermann-Schneider'), findsOneWidget);
+    expect(find.text('Alexandra Mustermann-Schneider'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

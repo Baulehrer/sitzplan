@@ -10,7 +10,7 @@ class SeatDetailScreen extends StatefulWidget {
   final int planId;
   final int row;
   final int col;
-  final String? extraLabel;
+  final List<String> extraLabels;
   final Future<void> Function(Seat seat) onSave;
   final Future<void> Function()? onDelete;
 
@@ -20,7 +20,7 @@ class SeatDetailScreen extends StatefulWidget {
     required this.planId,
     required this.row,
     required this.col,
-    this.extraLabel,
+    this.extraLabels = const [],
     required this.onSave,
     this.onDelete,
   });
@@ -32,7 +32,7 @@ class SeatDetailScreen extends StatefulWidget {
 class _SeatDetailScreenState extends State<SeatDetailScreen> {
   late TextEditingController _firstNameController;
   late TextEditingController _lastNameController;
-  late TextEditingController _extraInfoController;
+  late List<TextEditingController> _extraInfoControllers;
   String? _photoPath;
   final _imageService = ImageService();
   bool _saving = false;
@@ -47,8 +47,12 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     _lastNameController = TextEditingController(
       text: widget.seat?.lastName ?? '',
     );
-    _extraInfoController = TextEditingController(
-      text: widget.seat?.extraInfo ?? '',
+    final values = widget.seat?.extraInfos ?? const <String?>[];
+    _extraInfoControllers = List.generate(
+      widget.extraLabels.length,
+      (index) => TextEditingController(
+        text: index < values.length ? values[index] ?? '' : '',
+      ),
     );
     _photoPath = widget.seat?.photoPath;
   }
@@ -60,7 +64,9 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     }
     _firstNameController.dispose();
     _lastNameController.dispose();
-    _extraInfoController.dispose();
+    for (final controller in _extraInfoControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -126,9 +132,9 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
           ? null
           : _lastNameController.text.trim(),
       photoPath: _photoPath,
-      extraInfo: _extraInfoController.text.trim().isEmpty
-          ? null
-          : _extraInfoController.text.trim(),
+      extraInfo: _extraValue(0),
+      extraInfo2: _extraValue(1),
+      extraInfo3: _extraValue(2),
     );
 
     try {
@@ -144,6 +150,12 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
         setState(() => _saving = false);
       }
     }
+  }
+
+  String? _extraValue(int index) {
+    if (index >= _extraInfoControllers.length) return null;
+    final value = _extraInfoControllers[index].text.trim();
+    return value.isEmpty ? null : value;
   }
 
   Future<void> _delete() async {
@@ -212,24 +224,32 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
 
             // Photo area
             Center(
-              child: GestureDetector(
-                onTap: _pickPhoto,
-                child: Container(
-                  width: 140,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: GestureDetector(
+                    onTap: _pickPhoto,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _photoPath != null
+                          ? Image.file(
+                              File(_photoPath!),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, e, s) =>
+                                  _photoPlaceholder(theme),
+                            )
+                          : _photoPlaceholder(theme),
+                    ),
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _photoPath != null
-                      ? Image.file(
-                          File(_photoPath!),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => _photoPlaceholder(theme),
-                        )
-                      : _photoPlaceholder(theme),
                 ),
               ),
             ),
@@ -279,24 +299,27 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
                 border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
-              textInputAction: widget.extraLabel != null
+              textInputAction: widget.extraLabels.isNotEmpty
                   ? TextInputAction.next
                   : TextInputAction.done,
-              onSubmitted: widget.extraLabel == null ? (_) => _save() : null,
+              onSubmitted: widget.extraLabels.isEmpty ? (_) => _save() : null,
             ),
 
-            // Extra info field (if plan has one)
-            if (widget.extraLabel != null) ...[
+            for (var index = 0; index < widget.extraLabels.length; index++) ...[
               const SizedBox(height: 12),
               TextField(
-                controller: _extraInfoController,
+                controller: _extraInfoControllers[index],
                 decoration: InputDecoration(
-                  labelText: widget.extraLabel,
-                  border: const OutlineInputBorder(),
+                  labelText: widget.extraLabels[index],
+                  prefixIcon: const Icon(Icons.label_outline),
                 ),
                 textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _save(),
+                textInputAction: index < widget.extraLabels.length - 1
+                    ? TextInputAction.next
+                    : TextInputAction.done,
+                onSubmitted: index == widget.extraLabels.length - 1
+                    ? (_) => _save()
+                    : null,
               ),
             ],
             const SizedBox(height: 20),

@@ -9,12 +9,16 @@ void main() {
         rows: 4,
         columns: 8,
         extraLabel: 'Betrieb',
+        extraLabel2: 'Instrument',
+        extraLabel3: 'Hinweis',
       );
       final map = plan.toMap();
       expect(map['name'], 'Klasse 7a');
       expect(map['rows'], 4);
       expect(map['columns'], 8);
       expect(map['extra_label'], 'Betrieb');
+      expect(map['extra_label_2'], 'Instrument');
+      expect(map['extra_label_3'], 'Hinweis');
     });
 
     test('hasExtraField returns true when label is set', () {
@@ -73,6 +77,11 @@ void main() {
       expect(seat.isEmpty, isFalse);
     });
 
+    test('isEmpty returns false when third extra info is set', () {
+      final seat = Seat(planId: 1, row: 0, col: 0, extraInfo3: 'Rollstuhl');
+      expect(seat.isEmpty, isFalse);
+    });
+
     test('displayName combines first and last name', () {
       final seat = Seat(
         planId: 1,
@@ -94,12 +103,16 @@ void main() {
         lastName: 'Schmidt',
         photoPath: '/photos/test.jpg',
         extraInfo: 'Bäckerei Müller',
+        extraInfo2: 'Trompete',
+        extraInfo3: 'Fensterplatz',
       );
       final map = seat.toMap();
       final restored = Seat.fromMap(map);
       expect(restored.firstName, 'Anna');
       expect(restored.lastName, 'Schmidt');
       expect(restored.extraInfo, 'Bäckerei Müller');
+      expect(restored.extraInfo2, 'Trompete');
+      expect(restored.extraInfo3, 'Fensterplatz');
       expect(restored.row, 3);
       expect(restored.col, 4);
     });

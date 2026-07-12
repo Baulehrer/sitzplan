@@ -34,6 +34,8 @@ class SeatingPlanListProvider extends ChangeNotifier {
     int rows,
     int columns, {
     String? extraLabel,
+    String? extraLabel2,
+    String? extraLabel3,
     String? groupName,
   }) async {
     final plan = SeatingPlan(
@@ -41,6 +43,8 @@ class SeatingPlanListProvider extends ChangeNotifier {
       rows: rows,
       columns: columns,
       extraLabel: extraLabel,
+      extraLabel2: extraLabel2,
+      extraLabel3: extraLabel3,
       groupName: groupName,
     );
     final created = await _db.createPlan(plan);
@@ -176,6 +180,12 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
             firstName: student.firstName,
             lastName: student.lastName,
             extraInfo: _plan!.hasExtraField ? student.extraInfo : null,
+            extraInfo2: _plan!.extraLabels.length > 1
+                ? student.extraInfo2
+                : null,
+            extraInfo3: _plan!.extraLabels.length > 2
+                ? student.extraInfo3
+                : null,
           ),
         );
         added++;
