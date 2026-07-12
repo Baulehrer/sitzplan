@@ -6,6 +6,7 @@ import '../widgets/seat_card.dart';
 import '../services/image_service.dart';
 import '../services/import_export_service.dart';
 import '../services/pdf_service.dart';
+import '../theme/app_theme.dart';
 import 'seat_detail_screen.dart';
 
 class EditorScreen extends StatefulWidget {
@@ -41,28 +42,44 @@ class _EditorScreenState extends State<EditorScreen> {
     final editor = context.read<SeatingPlanEditorProvider>();
     final existingSeat = editor.getSeat(row, col);
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => SeatDetailScreen(
-        seat: existingSeat,
-        planId: widget.plan.id!,
-        row: row,
-        col: col,
-        extraLabel: widget.plan.extraLabel,
-        onSave: (seat) async {
-          await editor.saveSeat(seat);
-          if (mounted) _showMessage('Gespeichert');
-        },
-        onDelete: existingSeat != null && !existingSeat.isEmpty
-            ? () async {
-                await editor.removeSeat(row, col);
-                if (mounted) _showMessage('Platz geleert');
-              }
-            : null,
-      ),
+    final detail = SeatDetailScreen(
+      seat: existingSeat,
+      planId: widget.plan.id!,
+      row: row,
+      col: col,
+      extraLabel: widget.plan.extraLabel,
+      onSave: (seat) async {
+        await editor.saveSeat(seat);
+        if (mounted) _showMessage('Gespeichert');
+      },
+      onDelete: existingSeat != null && !existingSeat.isEmpty
+          ? () async {
+              await editor.removeSeat(row, col);
+              if (mounted) _showMessage('Platz geleert');
+            }
+          : null,
     );
+
+    if (UiBreakpoints.isCompact(context)) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => detail,
+      );
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          alignment: Alignment.centerRight,
+          insetPadding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: detail,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _exportPdf() async {
@@ -126,12 +143,16 @@ class _EditorScreenState extends State<EditorScreen> {
     );
     if (options == null || !mounted) return;
 
-    await PdfService().exportAndShare(
-      editor.plan!,
-      editor.seats,
-      context,
-      options: options,
-    );
+    try {
+      await PdfService().exportAndShare(
+        editor.plan!,
+        editor.seats,
+        context,
+        options: options,
+      );
+    } catch (error) {
+      if (mounted) _showMessage('PDF konnte nicht erstellt werden: $error');
+    }
   }
 
   Future<void> _clearSeats() async {
@@ -156,29 +177,60 @@ class _EditorScreenState extends State<EditorScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    await context.read<SeatingPlanEditorProvider>().clearSeats();
-    if (mounted) _showMessage('Sitzplan geleert');
+    try {
+      await context.read<SeatingPlanEditorProvider>().clearSeats();
+      if (mounted) _showMessage('Alle Plätze wurden geleert');
+    } catch (error) {
+      if (mounted) _showMessage('Plätze konnten nicht geleert werden: $error');
+    }
   }
 
   Future<void> _importCsv() async {
-    final students = await ImportExportService().pickCsvStudents();
-    if (!mounted || students.isEmpty) return;
-    final added = await context
-        .read<SeatingPlanEditorProvider>()
-        .fillFreeSeatsFromCsv(students);
-    if (mounted) _showMessage('$added Einträge importiert');
+    try {
+      final students = await ImportExportService().pickCsvStudents();
+      if (!mounted || students.isEmpty) return;
+      final added = await context
+          .read<SeatingPlanEditorProvider>()
+          .fillFreeSeatsFromCsv(students);
+      if (!mounted) return;
+      final skipped = students.length - added;
+      _showMessage(
+        skipped == 0
+            ? '$added Einträge importiert'
+            : '$added importiert, $skipped ohne freien Platz',
+      );
+    } catch (error) {
+      if (mounted) {
+        _showMessage('Namensliste konnte nicht importiert werden: $error');
+      }
+    }
   }
 
   Future<void> _importPhotos() async {
-    final paths = await ImageService().pickMultipleFromGallery();
-    if (!mounted || paths.isEmpty) return;
-    final added = await context
-        .read<SeatingPlanEditorProvider>()
-        .fillFreeSeatsWithPhotos(paths);
-    for (final unusedPath in paths.skip(added)) {
-      await ImageService().deletePhoto(unusedPath);
+    final imageService = ImageService();
+    List<String> paths = [];
+    var added = 0;
+    try {
+      paths = await imageService.pickMultipleFromGallery();
+      if (!mounted || paths.isEmpty) return;
+      added = await context
+          .read<SeatingPlanEditorProvider>()
+          .fillFreeSeatsWithPhotos(paths);
+      for (final unusedPath in paths.skip(added)) {
+        await imageService.deletePhoto(unusedPath);
+      }
+      if (!mounted) return;
+      final skipped = paths.length - added;
+      _showMessage(
+        skipped == 0
+            ? '$added Fotos eingefügt'
+            : '$added eingefügt, $skipped ohne freien Platz',
+      );
+    } catch (error) {
+      if (mounted) {
+        _showMessage('Fotos konnten nicht importiert werden: $error');
+      }
     }
-    if (mounted) _showMessage('$added Fotos eingefügt');
   }
 
   void _showMessage(String message, {SnackBarAction? action}) {
@@ -193,116 +245,262 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = UiBreakpoints.isCompact(context);
+    final expanded = UiBreakpoints.isExpanded(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.plan.name),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            tooltip: 'Als PDF exportieren',
-            onPressed: _exportPdf,
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'numbers':
-                  setState(() => _showSeatNumbers = !_showSeatNumbers);
-                  break;
-                case 'muted':
-                  setState(() => _muteEmptySeats = !_muteEmptySeats);
-                  break;
-                case 'csv':
-                  _importCsv();
-                  break;
-                case 'photos':
-                  _importPhotos();
-                  break;
-                case 'clear':
-                  _clearSeats();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              CheckedPopupMenuItem(
-                value: 'numbers',
-                checked: _showSeatNumbers,
-                child: const Text('Platznummern'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'muted',
-                checked: _muteEmptySeats,
-                child: const Text('Leere Plätze dezenter'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'csv', child: Text('CSV importieren')),
-              const PopupMenuItem(
-                value: 'photos',
-                child: Text('Fotos importieren'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Text('Alle Plätze leeren'),
-              ),
-            ],
-          ),
+          if (compact) ...[
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              tooltip: 'PDF exportieren',
+              onPressed: _exportPdf,
+            ),
+            _buildOverflowMenu(),
+          ],
         ],
       ),
       body: Consumer<SeatingPlanEditorProvider>(
         builder: (context, editor, _) {
-          if (editor.loading) {
+          if (editor.loading && editor.seats.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (editor.error != null) {
+            return _buildLoadError(editor);
+          }
 
-          return Padding(
-            padding: const EdgeInsets.all(12),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final plan = widget.plan;
-                final cellWidth =
-                    (constraints.maxWidth - (plan.columns - 1) * 8) /
-                    plan.columns;
-                final cellHeight = cellWidth * 1.2;
-
-                return SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      for (int r = 0; r < plan.rows; r++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            children: [
-                              for (int c = 0; c < plan.columns; c++)
-                                Expanded(
-                                  child: Padding(
-                                    padding: EdgeInsets.only(
-                                      right: c < plan.columns - 1 ? 8 : 0,
-                                    ),
-                                    child: SizedBox(
-                                      height: cellHeight,
-                                      child: _buildDragTarget(
-                                        r,
-                                        c,
-                                        editor,
-                                        cellWidth,
-                                        cellHeight,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          return Column(
+            children: [
+              if (!compact) _buildDesktopToolbar(editor, expanded: expanded),
+              Expanded(child: _buildPlanCanvas(editor)),
+            ],
           );
         },
       ),
     );
   }
+
+  PopupMenuButton<String> _buildOverflowMenu() => PopupMenuButton<String>(
+    tooltip: 'Weitere Aktionen',
+    onSelected: _handleMenuAction,
+    itemBuilder: (context) => [
+      CheckedPopupMenuItem(
+        value: 'numbers',
+        checked: _showSeatNumbers,
+        child: const Text('Platznummern anzeigen'),
+      ),
+      CheckedPopupMenuItem(
+        value: 'muted',
+        checked: _muteEmptySeats,
+        child: const Text('Freie Plätze dezenter'),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem(value: 'csv', child: Text('Namensliste importieren')),
+      const PopupMenuItem(value: 'photos', child: Text('Fotos importieren')),
+      const PopupMenuDivider(),
+      const PopupMenuItem(value: 'clear', child: Text('Alle Plätze leeren')),
+    ],
+  );
+
+  void _handleMenuAction(String value) {
+    switch (value) {
+      case 'numbers':
+        setState(() => _showSeatNumbers = !_showSeatNumbers);
+        break;
+      case 'muted':
+        setState(() => _muteEmptySeats = !_muteEmptySeats);
+        break;
+      case 'csv':
+        _importCsv();
+        break;
+      case 'photos':
+        _importPhotos();
+        break;
+      case 'clear':
+        _clearSeats();
+        break;
+    }
+  }
+
+  Widget _buildDesktopToolbar(
+    SeatingPlanEditorProvider editor, {
+    required bool expanded,
+  }) {
+    final occupied = editor.seats.where((seat) => !seat.isEmpty).length;
+    final total = widget.plan.rows * widget.plan.columns;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.chair_alt_outlined,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$occupied von $total Plätzen belegt',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const Spacer(),
+          if (expanded) ...[
+            FilterChip(
+              selected: _showSeatNumbers,
+              onSelected: (_) =>
+                  setState(() => _showSeatNumbers = !_showSeatNumbers),
+              avatar: const Icon(Icons.numbers, size: 18),
+              label: const Text('Platznummern'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _importCsv,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('Namensliste'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _importPhotos,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Fotos'),
+            ),
+            const SizedBox(width: 8),
+          ],
+          FilledButton.icon(
+            onPressed: _exportPdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('PDF exportieren'),
+          ),
+          _buildOverflowMenu(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanCanvas(SeatingPlanEditorProvider editor) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 10.0;
+        const minimumCellWidth = 112.0;
+        const maximumCellWidth = 176.0;
+        final available = constraints.maxWidth - 48;
+        final fitWidth =
+            (available - (widget.plan.columns - 1) * gap) / widget.plan.columns;
+        final cellWidth = fitWidth.clamp(minimumCellWidth, maximumCellWidth);
+        final cellHeight = cellWidth * 1.18;
+        final canvasWidth =
+            widget.plan.columns * cellWidth + (widget.plan.columns - 1) * gap;
+
+        return Scrollbar(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+            child: SizedBox(
+              width: canvasWidth,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildRoomFront(),
+                    const SizedBox(height: 14),
+                    for (int row = 0; row < widget.plan.rows; row++)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: row < widget.plan.rows - 1 ? gap : 0,
+                        ),
+                        child: Row(
+                          children: [
+                            for (int col = 0; col < widget.plan.columns; col++)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: col < widget.plan.columns - 1
+                                      ? gap
+                                      : 0,
+                                ),
+                                child: SizedBox(
+                                  width: cellWidth,
+                                  height: cellHeight,
+                                  child: _buildDragTarget(
+                                    row,
+                                    col,
+                                    editor,
+                                    cellWidth,
+                                    cellHeight,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRoomFront() => Semantics(
+    label: 'Vorderseite des Raums',
+    child: Row(
+      children: [
+        Expanded(
+          child: Divider(
+            color: Theme.of(context).colorScheme.secondary,
+            thickness: 3,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            'TAFEL · VORNE',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Divider(
+            color: Theme.of(context).colorScheme.secondary,
+            thickness: 3,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildLoadError(SeatingPlanEditorProvider editor) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.error_outline,
+          size: 48,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Dieser Sitzplan konnte nicht geladen werden',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () => editor.loadPlan(widget.plan),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Erneut laden'),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildDragTarget(
     int row,
@@ -374,48 +572,64 @@ class _EditorScreenState extends State<EditorScreen> {
 
         // If seat is filled, make it draggable
         if (hasSeat) {
-          return Draggable<_SeatPosition>(
-            data: _SeatPosition(row, col),
-            feedback: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: cellWidth * 0.9,
-                height: cellHeight * 0.9,
-                child: Opacity(opacity: 0.85, child: card),
-              ),
+          final data = _SeatPosition(row, col);
+          final feedback = Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: cellWidth * 0.9,
+              height: cellHeight * 0.9,
+              child: Opacity(opacity: 0.85, child: card),
             ),
-            childWhenDragging: Card(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.primary,
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignInside,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
+          );
+          final placeholder = Card(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                  strokeAlign: BorderSide.strokeAlignInside,
                 ),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              decoration: isHovered
-                  ? BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 2.5,
-                      ),
-                    )
-                  : null,
-              child: card,
-            ),
+          );
+          final child = AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 150),
+            decoration: isHovered
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2.5,
+                    ),
+                  )
+                : null,
+            child: card,
+          );
+          if (UiBreakpoints.isCompact(context)) {
+            return LongPressDraggable<_SeatPosition>(
+              data: data,
+              feedback: feedback,
+              childWhenDragging: placeholder,
+              child: child,
+            );
+          }
+          return Draggable<_SeatPosition>(
+            data: data,
+            feedback: feedback,
+            childWhenDragging: placeholder,
+            child: child,
           );
         }
 
         // Empty seat — just a drop target with highlight
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 150),
           decoration: isHovered
               ? BoxDecoration(
                   borderRadius: BorderRadius.circular(12),

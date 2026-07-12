@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/seating_plan_provider.dart';
 import '../models/seating_plan.dart';
 import '../services/import_export_service.dart';
+import '../theme/app_theme.dart';
 import 'editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,7 +18,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   final Set<String> _collapsedGroups = {};
-  final List<int> _recentPlanIds = [];
 
   @override
   void initState() {
@@ -215,16 +215,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openEditor(SeatingPlan plan) {
-    setState(() {
-      _recentPlanIds.remove(plan.id);
-      if (plan.id != null) {
-        _recentPlanIds.insert(0, plan.id!);
-      }
-      if (_recentPlanIds.length > 3) {
-        _recentPlanIds.removeRange(3, _recentPlanIds.length);
-      }
-    });
-
     unawaited(
       Navigator.push<void>(
         context,
@@ -518,9 +508,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = UiBreakpoints.isCompact(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Kaufi's Sitzplan-App"),
+        title: compact ? const Text('Sitzplan') : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.archive_outlined),
@@ -531,36 +522,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Consumer<SeatingPlanListProvider>(
         builder: (context, provider, _) {
-          if (provider.loading) {
+          if (provider.loading && provider.plans.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (provider.error != null && provider.plans.isEmpty) {
+            return _buildErrorState(provider);
+          }
           if (provider.plans.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.event_seat_outlined,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Noch keine Sitzpläne',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Erstelle deinen ersten Sitzplan!',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ],
-              ),
-            );
+            return _buildEmptyState();
           }
 
           final query = _searchController.text.trim().toLowerCase();
@@ -572,23 +541,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       group.toLowerCase().contains(query);
                 }).toList();
 
-          final recentPlans = _recentPlanIds
-              .map(
-                (id) => provider.plans.cast<SeatingPlan?>().firstWhere(
-                  (plan) => plan?.id == id,
-                  orElse: () => null,
-                ),
-              )
-              .whereType<SeatingPlan>()
-              .where(
-                (plan) => visiblePlans.any((visible) => visible.id == plan.id),
-              )
-              .take(3)
-              .toList();
+          final recentPlans = query.isEmpty
+              ? visiblePlans.take(compact ? 1 : 3).toList()
+              : <SeatingPlan>[];
+          final recentIds = recentPlans.map((plan) => plan.id).toSet();
 
           // Group plans by groupName
           final grouped = <String?, List<SeatingPlan>>{};
-          for (final plan in visiblePlans) {
+          for (final plan in visiblePlans.where(
+            (plan) => !recentIds.contains(plan.id),
+          )) {
             grouped.putIfAbsent(plan.groupName, () => []).add(plan);
           }
 
@@ -601,79 +563,57 @@ class _HomeScreenState extends State<HomeScreen> {
               return a.compareTo(b);
             });
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              TextField(
-                controller: _searchController,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  labelText: 'Suchen',
-                  border: OutlineInputBorder(),
+          final content = CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: _buildHeader(provider.plans.length)),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Plan oder Klasse suchen',
+                      labelText: 'Sitzpläne durchsuchen',
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-                onChanged: (_) => setState(() {}),
               ),
-              if (recentPlans.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Zuletzt geöffnet',
-                  style: Theme.of(context).textTheme.titleSmall,
+              if (recentPlans.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _sectionHeader('Zuletzt bearbeitet', Icons.history),
                 ),
-                const SizedBox(height: 4),
-                for (final plan in recentPlans) _buildPlanCard(plan),
-              ],
-              if (grouped.isEmpty) ...[
-                const SizedBox(height: 32),
-                Center(
-                  child: Text(
-                    'Keine passenden Sitzpläne',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ),
-              ],
+              if (recentPlans.isNotEmpty)
+                _planGrid(recentPlans, compact: compact),
+              if (grouped.isEmpty && visiblePlans.isEmpty)
+                SliverToBoxAdapter(child: _buildNoResults()),
               for (final groupName in sortedKeys) ...[
-                if (groupName != null && groupName.isNotEmpty) ...[
-                  ListTile(
-                    contentPadding: const EdgeInsets.only(
-                      left: 4,
-                      right: 4,
-                      top: 8,
-                    ),
-                    leading: Icon(
-                      _collapsedGroups.contains(groupName)
-                          ? Icons.folder_outlined
-                          : Icons.folder_open_outlined,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    title: Text(
-                      groupName,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    trailing: Icon(
-                      _collapsedGroups.contains(groupName)
-                          ? Icons.expand_more
-                          : Icons.expand_less,
-                    ),
-                    onTap: () {
-                      setState(() {
-                        if (!_collapsedGroups.add(groupName)) {
-                          _collapsedGroups.remove(groupName);
-                        }
-                      });
-                    },
-                  ),
-                ],
+                SliverToBoxAdapter(
+                  child: _groupHeader(groupName, grouped[groupName]!.length),
+                ),
                 if (groupName == null ||
                     groupName.isEmpty ||
                     !_collapsedGroups.contains(groupName))
-                  for (final plan in grouped[groupName]!) _buildPlanCard(plan),
+                  _planGrid(grouped[groupName]!, compact: compact),
               ],
+              const SliverToBoxAdapter(child: SizedBox(height: 96)),
             ],
+          );
+
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1360),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 16 : 32,
+                  compact ? 8 : 24,
+                  compact ? 16 : 32,
+                  0,
+                ),
+                child: content,
+              ),
+            ),
           );
         },
       ),
@@ -685,33 +625,301 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPlanCard(SeatingPlan plan) {
-    return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Icon(
-            Icons.grid_view_rounded,
-            color: Theme.of(context).colorScheme.primary,
+  Widget _buildHeader(int count) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'DEINE PLANUNGSFLÄCHE',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  letterSpacing: 1.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text('Sitzpläne', style: theme.textTheme.displaySmall),
+              const SizedBox(height: 4),
+              Text(
+                '$count ${count == 1 ? 'Plan' : 'Pläne'} – lokal auf diesem Gerät',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
-        title: Text(plan.name),
-        subtitle: Text(
-          '${plan.rows} × ${plan.columns} Plätze · '
-          '${_formatDate(plan.updatedAt)}',
+        if (!UiBreakpoints.isCompact(context))
+          FilledButton.icon(
+            onPressed: _showNewPlanDialog,
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.secondary,
+              foregroundColor: theme.colorScheme.onSecondary,
+            ),
+            icon: const Icon(Icons.add),
+            label: const Text('Neuen Plan anlegen'),
+          ),
+      ],
+    );
+  }
+
+  Widget _sectionHeader(String label, IconData icon) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 28, 2, 12),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(label, style: Theme.of(context).textTheme.titleMedium),
+      ],
+    ),
+  );
+
+  Widget _groupHeader(String? groupName, int count) {
+    final label = groupName?.isNotEmpty == true ? groupName! : 'Ohne Gruppe';
+    final collapsible = groupName?.isNotEmpty == true;
+    final collapsed = collapsible && _collapsedGroups.contains(groupName);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: collapsible
+          ? () => setState(() {
+              if (!_collapsedGroups.add(groupName!)) {
+                _collapsedGroups.remove(groupName);
+              }
+            })
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(2, 28, 2, 12),
+        child: Row(
+          children: [
+            Icon(
+              collapsed ? Icons.folder_outlined : Icons.folder_open_outlined,
+              size: 19,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Text('$count', style: Theme.of(context).textTheme.labelLarge),
+            if (collapsible)
+              Icon(collapsed ? Icons.expand_more : Icons.expand_less),
+          ],
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.more_vert),
-          onPressed: () => _showPlanMenu(plan),
-        ),
-        onTap: () => _openEditor(plan),
       ),
     );
   }
+
+  SliverGrid _planGrid(List<SeatingPlan> plans, {required bool compact}) {
+    return SliverGrid(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: compact
+            ? 1
+            : (UiBreakpoints.isExpanded(context) ? 3 : 2),
+        mainAxisExtent: 154,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _buildPlanCard(plans[index]),
+        childCount: plans.length,
+      ),
+    );
+  }
+
+  Widget _buildPlanCard(SeatingPlan plan) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openEditor(plan),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              _PlanThumbnail(rows: plan.rows, columns: plan.columns),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      plan.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${plan.rows} × ${plan.columns} · ${plan.rows * plan.columns} Plätze',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Bearbeitet am ${_formatDate(plan.updatedAt)}',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Planaktionen',
+                icon: const Icon(Icons.more_horiz),
+                onPressed: () => _showPlanMenu(plan),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 440),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _PlanThumbnail(rows: 3, columns: 5, size: 112),
+            const SizedBox(height: 24),
+            Text(
+              'Die Klasse kann kommen',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Lege deinen ersten Sitzplan an. Alles bleibt lokal auf diesem Gerät.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _showNewPlanDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Ersten Plan anlegen'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildNoResults() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 56),
+    child: Center(
+      child: Text(
+        'Kein Sitzplan passt zu dieser Suche.',
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
+    ),
+  );
+
+  Widget _buildErrorState(SeatingPlanListProvider provider) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 48,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Sitzpläne konnten nicht geladen werden',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          const Text('Prüfe den Speicherzugriff und versuche es erneut.'),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: provider.loadPlans,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Erneut laden'),
+          ),
+        ],
+      ),
+    ),
+  );
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}.'
         '${date.month.toString().padLeft(2, '0')}.'
         '${date.year}';
+  }
+}
+
+class _PlanThumbnail extends StatelessWidget {
+  final int rows;
+  final int columns;
+  final double size;
+
+  const _PlanThumbnail({
+    required this.rows,
+    required this.columns,
+    this.size = 88,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleRows = rows.clamp(1, 4);
+    final visibleColumns = columns.clamp(1, 5);
+    return Semantics(
+      label: '$rows Reihen und $columns Spalten',
+      child: Container(
+        width: size,
+        height: size,
+        padding: EdgeInsets.all(size * .14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Container(
+              height: 3,
+              margin: const EdgeInsets.only(bottom: 7),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(
+              child: GridView.count(
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: visibleColumns,
+                mainAxisSpacing: 3,
+                crossAxisSpacing: 3,
+                children: List.generate(
+                  visibleRows * visibleColumns,
+                  (_) => DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .82),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -184,7 +184,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
+      padding: EdgeInsets.fromLTRB(28, 18, 28, 28 + bottomInset),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -194,7 +194,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Platz ${widget.row + 1}/${widget.col + 1}',
+                  'Platz ${widget.row + 1} · ${widget.col + 1}',
                   style: theme.textTheme.titleLarge,
                 ),
                 if (widget.onDelete != null)
@@ -301,15 +301,16 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
             ],
             const SizedBox(height: 20),
 
-            FilledButton(
+            FilledButton.icon(
               onPressed: _saving ? null : _save,
-              child: _saving
+              icon: _saving
                   ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Speichern'),
+                  : const Icon(Icons.check),
+              label: const Text('Änderungen speichern'),
             ),
           ],
         ),

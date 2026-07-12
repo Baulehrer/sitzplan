@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_VERSION="${APP_VERSION:-1.0.1}"
 ARCH="${ARCH:-x86_64}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+APP_VERSION="${APP_VERSION:-$(sed -n 's/^version: \([^+]*\).*/\1/p' "$ROOT_DIR/pubspec.yaml")}"
 BUNDLE_DIR="$ROOT_DIR/build/linux/x64/release/bundle"
 APPDIR="$ROOT_DIR/build/appimage/Sitzplan.AppDir"
 DIST_DIR="$ROOT_DIR/dist"

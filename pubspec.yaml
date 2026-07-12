@@ -1,7 +1,7 @@
 name: sitzplan
 description: "Kaufi's Sitzplan-App für Lehrer — Sitzpläne erstellen, Schülerfotos zuordnen, als PDF exportieren."
 publish_to: 'none'
-version: 1.1.0+3
+version: 1.2.0+4
 
 environment:
   sdk: ^3.11.3
@@ -37,3 +37,10 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: SitzplanDisplay
+      fonts:
+        - asset: assets/fonts/BarlowCondensed-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/BarlowCondensed-Bold.ttf
+          weight: 700

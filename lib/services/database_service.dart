@@ -11,6 +11,9 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
+  @visibleForTesting
+  DatabaseService.forTesting(Database database) : _db = database;
+
   final _uuid = const Uuid();
   Database? _db;
 
@@ -36,12 +39,18 @@ class DatabaseService {
 
     return await openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
-      onCreate: (db, version) async {
-        await db.execute('''
+      onCreate: createSchema,
+      onUpgrade: upgradeSchema,
+    );
+  }
+
+  @visibleForTesting
+  static Future<void> createSchema(Database db, int version) async {
+    await db.execute('''
           CREATE TABLE plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -53,7 +62,7 @@ class DatabaseService {
             updated_at TEXT NOT NULL
           )
         ''');
-        await db.execute('''
+    await db.execute('''
           CREATE TABLE seats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             plan_id INTEGER NOT NULL,
@@ -66,17 +75,37 @@ class DatabaseService {
             FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
           )
         ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('ALTER TABLE plans ADD COLUMN extra_label TEXT');
-          await db.execute('ALTER TABLE seats ADD COLUMN extra_info TEXT');
-        }
-        if (oldVersion < 3) {
-          await db.execute('ALTER TABLE plans ADD COLUMN group_name TEXT');
-        }
-      },
+    await db.execute(
+      'CREATE UNIQUE INDEX seats_plan_position '
+      'ON seats(plan_id, row, col)',
     );
+  }
+
+  @visibleForTesting
+  static Future<void> upgradeSchema(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE plans ADD COLUMN extra_label TEXT');
+      await db.execute('ALTER TABLE seats ADD COLUMN extra_info TEXT');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE plans ADD COLUMN group_name TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('''
+            DELETE FROM seats
+            WHERE id NOT IN (
+              SELECT MAX(id) FROM seats GROUP BY plan_id, row, col
+            )
+          ''');
+      await db.execute(
+        'CREATE UNIQUE INDEX seats_plan_position '
+        'ON seats(plan_id, row, col)',
+      );
+    }
   }
 
   // --- Plans ---
@@ -220,6 +249,34 @@ class DatabaseService {
     });
   }
 
+  Future<void> restoreSeatPositions(
+    int planId,
+    List<SeatPositionSnapshot> snapshots,
+  ) async {
+    if (snapshots.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final snapshot in snapshots) {
+        await txn.delete(
+          'seats',
+          where: 'plan_id = ? AND row = ? AND col = ?',
+          whereArgs: [planId, snapshot.row, snapshot.col],
+        );
+      }
+      for (final snapshot in snapshots) {
+        final seat = snapshot.seat;
+        if (seat == null || seat.isEmpty) continue;
+        await txn.insert(
+          'seats',
+          seat
+              .copyWith(planId: planId, row: snapshot.row, col: snapshot.col)
+              .toMap(),
+        );
+      }
+      await _touchPlan(txn, planId);
+    });
+  }
+
   Future<void> moveSeat(
     int planId,
     int fromRow,
@@ -236,25 +293,32 @@ class DatabaseService {
 
       final toSeat = await _getSeatByPosition(txn, planId, toRow, toCol);
 
-      if (toSeat != null && toSeat.isEmpty) {
-        await txn.delete('seats', where: 'id = ?', whereArgs: [toSeat.id]);
-      }
-
+      // Move through a temporary coordinate so the unique position index also
+      // protects swaps without causing a transient collision.
       await txn.update(
         'seats',
-        fromSeat.copyWith(row: toRow, col: toCol).toMap(),
+        {'row': -1, 'col': -1},
         where: 'id = ?',
         whereArgs: [fromSeat.id],
       );
-
-      if (toSeat != null && !toSeat.isEmpty) {
-        await txn.update(
-          'seats',
-          toSeat.copyWith(row: fromRow, col: fromCol).toMap(),
-          where: 'id = ?',
-          whereArgs: [toSeat.id],
-        );
+      if (toSeat != null) {
+        if (toSeat.isEmpty) {
+          await txn.delete('seats', where: 'id = ?', whereArgs: [toSeat.id]);
+        } else {
+          await txn.update(
+            'seats',
+            {'row': fromRow, 'col': fromCol},
+            where: 'id = ?',
+            whereArgs: [toSeat.id],
+          );
+        }
       }
+      await txn.update(
+        'seats',
+        {'row': toRow, 'col': toCol},
+        where: 'id = ?',
+        whereArgs: [fromSeat.id],
+      );
 
       await _touchPlan(txn, planId);
     });
@@ -366,4 +430,16 @@ class DatabaseService {
   Set<String> _photoPathsFromSeats(Iterable<Seat> seats) {
     return seats.map((seat) => seat.photoPath).whereType<String>().toSet();
   }
+}
+
+class SeatPositionSnapshot {
+  final int row;
+  final int col;
+  final Seat? seat;
+
+  const SeatPositionSnapshot({
+    required this.row,
+    required this.col,
+    required this.seat,
+  });
 }

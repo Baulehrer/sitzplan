@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Fotos können direkt einem Sitzplatz zugeordnet werden.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Fotos können aus der Mediathek einem Sitzplatz zugeordnet werden.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

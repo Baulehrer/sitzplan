@@ -9,15 +9,20 @@ class SeatingPlanListProvider extends ChangeNotifier {
   final _db = DatabaseService();
   List<SeatingPlan> _plans = [];
   bool _loading = false;
+  Object? _error;
 
   UnmodifiableListView<SeatingPlan> get plans => UnmodifiableListView(_plans);
   bool get loading => _loading;
+  Object? get error => _error;
 
   Future<void> loadPlans() async {
     _loading = true;
+    _error = null;
     notifyListeners();
     try {
       _plans = await _db.getPlans();
+    } catch (error) {
+      _error = error;
     } finally {
       _loading = false;
       notifyListeners();
@@ -93,19 +98,24 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   List<Seat> _seats = [];
   Map<String, Seat> _seatByPosition = {};
   bool _loading = false;
+  Object? _error;
 
   SeatingPlan? get plan => _plan;
   UnmodifiableListView<Seat> get seats => UnmodifiableListView(_seats);
   bool get loading => _loading;
+  Object? get error => _error;
 
   Seat? getSeat(int row, int col) => _seatByPosition[_positionKey(row, col)];
 
   Future<void> loadPlan(SeatingPlan plan) async {
     _loading = true;
+    _error = null;
     _plan = plan;
     notifyListeners();
     try {
       _setSeats(await _db.getSeats(plan.id!));
+    } catch (error) {
+      _error = error;
     } finally {
       _loading = false;
       notifyListeners();
@@ -113,6 +123,10 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   }
 
   Future<void> saveSeat(Seat seat) async {
+    if (seat.isEmpty) {
+      await removeSeat(seat.row, seat.col);
+      return;
+    }
     final saved = await _db.upsertSeat(seat);
     final index = _seats.indexWhere(
       (s) => s.id == saved.id || (s.row == saved.row && s.col == saved.col),
@@ -214,14 +228,18 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
 
   Future<void> restorePositions(List<SeatSnapshot> snapshots) async {
     if (_plan == null) return;
-    for (final snapshot in snapshots) {
-      await _db.replaceSeatAtPosition(
-        snapshot.seat,
-        _plan!.id!,
-        snapshot.row,
-        snapshot.col,
-      );
-    }
+    await _db.restoreSeatPositions(
+      _plan!.id!,
+      snapshots
+          .map(
+            (snapshot) => SeatPositionSnapshot(
+              row: snapshot.row,
+              col: snapshot.col,
+              seat: snapshot.seat,
+            ),
+          )
+          .toList(),
+    );
     _setSeats(await _db.getSeats(_plan!.id!));
     notifyListeners();
   }

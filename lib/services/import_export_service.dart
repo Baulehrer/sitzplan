@@ -25,7 +25,9 @@ class ImportExportService {
     final file = await openFile(acceptedTypeGroups: [typeGroup]);
     if (file == null) return [];
 
-    final text = await File(file.path).readAsString();
+    final text = (await File(
+      file.path,
+    ).readAsString()).replaceFirst('\uFEFF', '');
     final rows = const LineSplitter()
         .convert(text)
         .map(_parseCsvLine)

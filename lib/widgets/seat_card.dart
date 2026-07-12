@@ -21,11 +21,15 @@ class SeatCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isEmpty = seat == null || seat!.isEmpty;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: isEmpty ? _buildEmptySeat(theme) : _buildFilledSeat(theme),
+    return Semantics(
+      button: true,
+      label: isEmpty ? 'Freier Platz' : 'Platz von ${seat!.displayName}',
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: isEmpty ? _buildEmptySeat(theme) : _buildFilledSeat(theme),
+        ),
       ),
     );
   }
@@ -46,12 +50,26 @@ class SeatCard extends StatelessWidget {
         children: [
           if (positionLabel != null) _buildPositionLabel(theme),
           Center(
-            child: Icon(
-              Icons.add,
-              color: theme.colorScheme.outline.withValues(
-                alpha: mutedEmpty ? 0.35 : 1,
-              ),
-              size: mutedEmpty ? 22 : 28,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.add,
+                  color: theme.colorScheme.outline.withValues(
+                    alpha: mutedEmpty ? 0.35 : 1,
+                  ),
+                  size: mutedEmpty ? 22 : 28,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Frei',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.outline.withValues(
+                      alpha: mutedEmpty ? .35 : .8,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -61,16 +79,22 @@ class SeatCard extends StatelessWidget {
 
   Widget _buildFilledSeat(ThemeData theme) {
     return Container(
-      color: theme.colorScheme.surfaceContainerLow,
+      color: theme.colorScheme.surfaceContainerLowest,
       child: Stack(
         children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 4, color: theme.colorScheme.secondary),
+          ),
           Column(
             children: [
               // Photo — large
               Expanded(
                 flex: 5,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
+                  padding: const EdgeInsets.fromLTRB(10, 8, 8, 4),
                   child: _buildPhoto(theme),
                 ),
               ),
@@ -150,7 +174,7 @@ class SeatCard extends StatelessWidget {
   Widget _buildPhoto(ThemeData theme) {
     if (seat?.photoPath != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Image.file(
           File(seat!.photoPath!),
           fit: BoxFit.cover,
@@ -165,14 +189,14 @@ class SeatCard extends StatelessWidget {
   Widget _buildPlaceholder(ThemeData theme) {
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.primary,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Center(
         child: Text(
           _initials,
           style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onPrimaryContainer,
+            color: theme.colorScheme.onPrimary,
             fontWeight: FontWeight.bold,
           ),
         ),
