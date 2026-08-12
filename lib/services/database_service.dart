@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
 import '../models/seating_plan.dart';
@@ -31,11 +32,14 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    // Use FFI for desktop platforms
+    late final DatabaseFactory factory;
     if (!kIsWeb &&
         (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
       sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+      factory = databaseFactoryFfi;
+    } else {
+      // Android and iOS use the native sqflite Flutter plugin.
+      factory = sqflite.databaseFactory;
     }
 
     final dir = await getApplicationDocumentsDirectory();
@@ -44,14 +48,16 @@ class DatabaseService {
     // Ensure directory exists
     await Directory(p.dirname(dbPath)).create(recursive: true);
 
-    return await openDatabase(
+    return factory.openDatabase(
       dbPath,
-      version: 6,
-      onConfigure: (db) async {
-        await db.execute('PRAGMA foreign_keys = ON');
-      },
-      onCreate: createSchema,
-      onUpgrade: upgradeSchema,
+      options: OpenDatabaseOptions(
+        version: 6,
+        onConfigure: (db) async {
+          await db.execute('PRAGMA foreign_keys = ON');
+        },
+        onCreate: createSchema,
+        onUpgrade: upgradeSchema,
+      ),
     );
   }
 

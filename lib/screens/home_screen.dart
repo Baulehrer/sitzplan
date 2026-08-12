@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
     int rows = 4;
     int columns = 8;
     int extraFieldCount = 0;
+    bool isCreating = false;
 
     // Get existing group names for suggestions
     final provider = context.read<SeatingPlanListProvider>();
@@ -207,29 +208,44 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Text('Abbrechen'),
               ),
               FilledButton(
-                onPressed: () async {
-                  final name = nameController.text.trim();
-                  if (name.isEmpty) return;
-                  final labels = [
-                    for (var index = 0; index < extraFieldCount; index++)
-                      extraLabelControllers[index].text.trim(),
-                  ];
-                  if (labels.any((label) => label.isEmpty)) return;
-                  final group = groupName.trim();
-                  final plan = await provider.createPlan(
-                    name,
-                    rows,
-                    columns,
-                    extraLabel: labels.isNotEmpty ? labels[0] : null,
-                    extraLabel2: labels.length > 1 ? labels[1] : null,
-                    extraLabel3: labels.length > 2 ? labels[2] : null,
-                    groupName: group.isEmpty ? null : group,
-                  );
-                  if (!ctx.mounted) return;
-                  Navigator.pop(ctx);
-                  _openEditor(plan);
-                },
-                child: const Text('Erstellen'),
+                onPressed: isCreating
+                    ? null
+                    : () async {
+                        final name = nameController.text.trim();
+                        if (name.isEmpty) return;
+                        final labels = [
+                          for (var index = 0; index < extraFieldCount; index++)
+                            extraLabelControllers[index].text.trim(),
+                        ];
+                        if (labels.any((label) => label.isEmpty)) return;
+                        final group = groupName.trim();
+                        setDialogState(() => isCreating = true);
+                        try {
+                          final plan = await provider.createPlan(
+                            name,
+                            rows,
+                            columns,
+                            extraLabel: labels.isNotEmpty ? labels[0] : null,
+                            extraLabel2: labels.length > 1 ? labels[1] : null,
+                            extraLabel3: labels.length > 2 ? labels[2] : null,
+                            groupName: group.isEmpty ? null : group,
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          _openEditor(plan);
+                        } catch (error) {
+                          if (!mounted || !ctx.mounted) return;
+                          setDialogState(() => isCreating = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Sitzplan konnte nicht erstellt werden: $error',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                child: Text(isCreating ? 'Wird erstellt…' : 'Erstellen'),
               ),
             ],
           ),
