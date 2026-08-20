@@ -4,6 +4,7 @@ import 'providers/seating_plan_provider.dart';
 import 'providers/app_appearance_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/automatic_update_gate.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +29,7 @@ class SitzplanApp extends StatelessWidget {
           theme: AppTheme.lightFor(appearance.palette),
           darkTheme: AppTheme.darkFor(appearance.palette),
           themeMode: appearance.themeMode,
-          home: const HomeScreen(),
+          home: const AutomaticUpdateGate(child: HomeScreen()),
         ),
       ),
     );

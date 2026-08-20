@@ -14,6 +14,7 @@ Eine lokale Flutter-App zum Erstellen, Bearbeiten und Drucken von Sitzplänen.
 - Schnelleingabe mit „Speichern & weiter“
 - Nachträglich anpassbare Raumgröße
 - Kameraaufnahme auf Android, iOS, Windows, Linux und macOS
+- Automatische Update-Prüfung über GitHub Releases beim App-Start
 - PDF-Export im A4-Querformat
 - Dark Mode über das System-Theme
 
@@ -43,20 +44,28 @@ flutter test
 
 ## Release
 
-Aktuelle Version: `1.4.0`
+Aktuelle Version: `1.5.0`
 
-GitHub Actions erstellt bei Tags wie `v1.4.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
+GitHub Actions erstellt bei Tags wie `v1.5.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
 
 Desktop-Artefakte:
 
-- Windows: `Sitzplan-1.4.0-Setup.exe`
-- Linux: `Sitzplan-1.4.0-x86_64.AppImage`
-- macOS: `Sitzplan-1.4.0-macos.dmg`
-- Android: `Sitzplan-1.4.0-android.apk`
+- Windows: `Sitzplan-1.5.0-Setup.exe`
+- Linux: `Sitzplan-1.5.0-x86_64.AppImage`
+- macOS: `Sitzplan-1.5.0-macos.dmg`
+- Android: `Sitzplan-1.5.0-android.apk`
 
-Der Windows-Installer und die macOS-DMG sind aktuell nicht signiert. Auf macOS kann Gatekeeper deshalb beim ersten Start eine Sicherheitsabfrage anzeigen. Das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert; für TestFlight oder App Store sind zusätzliche Signing-Secrets nötig. Die Android-APK nutzt aktuell die im Projekt konfigurierte Debug-Signierung für Release-Builds.
+Der Windows-Installer und die macOS-DMG sind aktuell nicht signiert. Auf macOS kann Gatekeeper deshalb beim ersten Start eine Sicherheitsabfrage anzeigen. Das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert; für TestFlight oder App Store sind zusätzliche Signing-Secrets nötig.
+
+Damit Android Folgeversionen als Update akzeptiert, verlangt der Release-Workflow eine dauerhafte Signatur über die GitHub-Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` und `ANDROID_STORE_PASSWORD`. Lokale Release-Builds fallen weiterhin auf die Debug-Signatur zurück.
+
+Hinweis für den Übergang: Die früheren APKs 1.3.5 und 1.4.0 wurden nachweislich mit unterschiedlichen temporären Debug-Zertifikaten gebaut. Deshalb muss Android 1.5.0 einmalig manuell neu installiert werden; wichtige Sitzpläne vorher exportieren. Ab der dauerhaft signierten 1.5.0 funktionieren Folgeupdates regulär über den Systeminstaller.
 
 Die Desktop-Pakete enthalten ein passendes FFmpeg-Kameramodul. Unter Windows und macOS wird die vorhandene Kamera automatisch erkannt; unter Linux wird das erste verfügbare `/dev/video*`-Gerät verwendet. Android und iOS nutzen die native Kamera des Systems. Beim ersten Aufnehmen kann das Betriebssystem nach der Kameraberechtigung fragen.
+
+### Automatische Updates
+
+Beim Start prüft die App die jeweils neueste stabile GitHub-Veröffentlichung. Windows lädt den Installer und startet ihn automatisch, eine laufende Linux-AppImage ersetzt sich selbst. Android öffnet nach dem Download den Systeminstaller; beim ersten Mal muss „Apps aus dieser Quelle“ erlaubt werden. macOS öffnet das bereits geladene DMG, da das Betriebssystem bei nicht notarisierten Apps eine manuelle Bestätigung verlangt. iOS kann das unsignierte GitHub-Artefakt nicht selbst aktualisieren.
 
 Build-Beispiele:
 
