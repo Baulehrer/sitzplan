@@ -102,6 +102,7 @@ class Seat {
   final String? extraInfo; // z.B. Betriebsname
   final String? extraInfo2;
   final String? extraInfo3;
+  final bool isLocked;
 
   Seat({
     this.id,
@@ -114,6 +115,7 @@ class Seat {
     this.extraInfo,
     this.extraInfo2,
     this.extraInfo3,
+    this.isLocked = false,
   });
 
   bool get isEmpty =>
@@ -144,6 +146,7 @@ class Seat {
     String? extraInfo,
     String? extraInfo2,
     String? extraInfo3,
+    bool? isLocked,
     bool clearPhoto = false,
     bool clearExtraInfo = false,
     bool clearExtraInfo2 = false,
@@ -160,6 +163,7 @@ class Seat {
       extraInfo: clearExtraInfo ? null : (extraInfo ?? this.extraInfo),
       extraInfo2: clearExtraInfo2 ? null : (extraInfo2 ?? this.extraInfo2),
       extraInfo3: clearExtraInfo3 ? null : (extraInfo3 ?? this.extraInfo3),
+      isLocked: isLocked ?? this.isLocked,
     );
   }
 
@@ -175,6 +179,7 @@ class Seat {
       'extra_info': extraInfo,
       'extra_info_2': extraInfo2,
       'extra_info_3': extraInfo3,
+      'is_locked': isLocked ? 1 : 0,
     };
   }
 
@@ -190,6 +195,7 @@ class Seat {
       extraInfo: map['extra_info'] as String?,
       extraInfo2: map['extra_info_2'] as String?,
       extraInfo3: map['extra_info_3'] as String?,
+      isLocked: (map['is_locked'] as int? ?? 0) == 1,
     );
   }
 }

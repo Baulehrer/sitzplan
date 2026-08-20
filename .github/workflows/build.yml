@@ -72,6 +72,9 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release --build-name "${{ env.APP_VERSION }}" --build-number "${{ env.APP_BUILD_NUMBER }}"
+      - name: Bundle camera runtime
+        shell: bash
+        run: packaging/bundle_ffmpeg.sh build/windows/x64/runner/Release win32-x64 ffmpeg.exe
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - name: Build installer

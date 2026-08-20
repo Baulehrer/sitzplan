@@ -105,6 +105,7 @@ void main() {
         extraInfo: 'Bäckerei Müller',
         extraInfo2: 'Trompete',
         extraInfo3: 'Fensterplatz',
+        isLocked: true,
       );
       final map = seat.toMap();
       final restored = Seat.fromMap(map);
@@ -113,6 +114,7 @@ void main() {
       expect(restored.extraInfo, 'Bäckerei Müller');
       expect(restored.extraInfo2, 'Trompete');
       expect(restored.extraInfo3, 'Fensterplatz');
+      expect(restored.isLocked, isTrue);
       expect(restored.row, 3);
       expect(restored.col, 4);
     });

@@ -37,6 +37,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
   final _imageService = ImageService();
   bool _saving = false;
   bool _completed = false;
+  bool _saveAndContinue = false;
 
   @override
   void initState() {
@@ -85,25 +86,22 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
   }
 
   Future<void> _takePhoto() async {
-    final path = await _imageService.pickFromCamera();
-    if (path == null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Kamera nicht verfügbar. Ist ffmpeg installiert?'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-    if (path != null) {
-      if (_isTemporaryPhoto(_photoPath)) {
-        await _imageService.deletePhoto(_photoPath);
+    try {
+      final path = await _imageService.pickFromCamera();
+      if (path != null) {
+        if (_isTemporaryPhoto(_photoPath)) {
+          await _imageService.deletePhoto(_photoPath);
+        }
+        if (!mounted) {
+          await _imageService.deletePhoto(path);
+          return;
+        }
+        setState(() => _photoPath = path);
       }
-      if (!mounted) {
-        await _imageService.deletePhoto(path);
-        return;
-      }
-      setState(() => _photoPath = path);
+    } on CameraCaptureException catch (error) {
+      if (mounted) _showError(error.message);
+    } catch (error) {
+      if (mounted) _showError('Kameraaufnahme fehlgeschlagen: $error');
     }
   }
 
@@ -116,7 +114,7 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool andContinue = false}) async {
     if (_saving) return;
     setState(() => _saving = true);
 
@@ -135,12 +133,14 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
       extraInfo: _extraValue(0),
       extraInfo2: _extraValue(1),
       extraInfo3: _extraValue(2),
+      isLocked: widget.seat?.isLocked ?? false,
     );
 
     try {
       await widget.onSave(seat);
       _completed = true;
-      if (mounted) Navigator.pop(context);
+      _saveAndContinue = andContinue;
+      if (mounted) Navigator.pop(context, _saveAndContinue);
     } catch (error) {
       if (mounted) {
         _showError('Speichern fehlgeschlagen: $error');
@@ -324,16 +324,27 @@ class _SeatDetailScreenState extends State<SeatDetailScreen> {
             ],
             const SizedBox(height: 20),
 
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: const Text('Änderungen speichern'),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton.icon(
+                  onPressed: _saving ? null : () => _save(andContinue: true),
+                  icon: _saving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.arrow_forward),
+                  label: const Text('Speichern & weiter'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : () => _save(),
+                  icon: const Icon(Icons.check),
+                  label: const Text('Speichern'),
+                ),
+              ],
             ),
           ],
         ),

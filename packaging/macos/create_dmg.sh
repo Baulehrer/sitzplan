@@ -14,6 +14,22 @@ if [[ -z "$APP_PATH" ]]; then
   exit 1
 fi
 
+MACHINE_ARCH="$(uname -m)"
+FFMPEG_ARCH="x64"
+if [[ "$MACHINE_ARCH" == "arm64" ]]; then
+  FFMPEG_ARCH="arm64"
+fi
+"$ROOT_DIR/packaging/bundle_ffmpeg.sh" \
+  "$APP_PATH/Contents/MacOS" \
+  "darwin-$FFMPEG_ARCH"
+codesign --force --sign - \
+  --entitlements "$ROOT_DIR/macos/Runner/Ffmpeg.entitlements" \
+  "$APP_PATH/Contents/MacOS/ffmpeg"
+codesign --force --sign - \
+  --entitlements "$ROOT_DIR/macos/Runner/Release.entitlements" \
+  "$APP_PATH"
+codesign --verify --deep --strict "$APP_PATH"
+
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR" "$DIST_DIR"
 cp -R "$APP_PATH" "$STAGING_DIR/"

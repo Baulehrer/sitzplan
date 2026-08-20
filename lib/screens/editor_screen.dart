@@ -38,16 +38,17 @@ class _EditorScreenState extends State<EditorScreen> {
     super.dispose();
   }
 
-  void _openSeatDetail(int row, int col) {
+  Future<void> _openSeatDetail(int row, int col) async {
     final editor = context.read<SeatingPlanEditorProvider>();
     final existingSeat = editor.getSeat(row, col);
+    final plan = editor.plan ?? widget.plan;
 
     final detail = SeatDetailScreen(
       seat: existingSeat,
-      planId: widget.plan.id!,
+      planId: plan.id!,
       row: row,
       col: col,
-      extraLabels: widget.plan.extraLabels,
+      extraLabels: plan.extraLabels,
       onSave: (seat) async {
         await editor.saveSeat(seat);
         if (mounted) _showMessage('Gespeichert');
@@ -60,25 +61,31 @@ class _EditorScreenState extends State<EditorScreen> {
           : null,
     );
 
-    if (UiBreakpoints.isCompact(context)) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (_) => detail,
-      );
-    } else {
-      showDialog<void>(
-        context: context,
-        builder: (_) => Dialog(
-          alignment: Alignment.centerRight,
-          insetPadding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: detail,
-          ),
-        ),
-      );
+    final saveAndContinue = UiBreakpoints.isCompact(context)
+        ? await showModalBottomSheet<bool>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            builder: (_) => detail,
+          )
+        : await showDialog<bool>(
+            context: context,
+            builder: (_) => Dialog(
+              alignment: Alignment.centerRight,
+              insetPadding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: detail,
+              ),
+            ),
+          );
+    if (saveAndContinue == true && mounted) {
+      final next = editor.findNextFreePosition(row, col);
+      if (next == null) {
+        _showMessage('Alle Plätze sind belegt');
+      } else {
+        await _openSeatDetail(next.row, next.col);
+      }
     }
   }
 
@@ -374,6 +381,151 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  Future<void> _showShuffleDialog() async {
+    var mode = ShuffleMode.occupiedPositions;
+    final selected = await showDialog<ShuffleMode>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Plätze mischen'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Fixierte Schüler bleiben sitzen. Wie sollen freie Plätze behandelt werden?',
+              ),
+              const SizedBox(height: 12),
+              RadioGroup<ShuffleMode>(
+                groupValue: mode,
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => mode = value);
+                },
+                child: const Column(
+                  children: [
+                    RadioListTile(
+                      value: ShuffleMode.occupiedPositions,
+                      title: Text('Lücken behalten'),
+                      subtitle: Text('Nur bisher belegte Plätze tauschen'),
+                    ),
+                    RadioListTile(
+                      value: ShuffleMode.allAvailablePositions,
+                      title: Text('Alle freien Plätze nutzen'),
+                      subtitle: Text('Auch die Lücken werden neu verteilt'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, mode),
+              icon: const Icon(Icons.casino_outlined),
+              label: const Text('Mischen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    try {
+      final changed = await context
+          .read<SeatingPlanEditorProvider>()
+          .shuffleSeats(selected);
+      if (mounted) {
+        _showMessage(
+          changed
+              ? 'Plätze wurden neu gemischt'
+              : 'Mindestens zwei bewegliche Schüler werden benötigt',
+        );
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Plätze konnten nicht gemischt werden: $error');
+    }
+  }
+
+  Future<void> _showResizeDialog() async {
+    final editor = context.read<SeatingPlanEditorProvider>();
+    final plan = editor.plan ?? widget.plan;
+    var rows = plan.rows;
+    var columns = plan.columns;
+    final size = await showDialog<(int, int)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Raumgröße ändern'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Reihen: $rows'),
+              Slider(
+                value: rows.toDouble(),
+                min: 1,
+                max: 10,
+                divisions: 9,
+                onChanged: (value) =>
+                    setDialogState(() => rows = value.round()),
+              ),
+              Text('Spalten: $columns'),
+              Slider(
+                value: columns.toDouble(),
+                min: 1,
+                max: 14,
+                divisions: 13,
+                onChanged: (value) =>
+                    setDialogState(() => columns = value.round()),
+              ),
+              Text('$rows × $columns = ${rows * columns} Plätze'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, (rows, columns)),
+              child: const Text('Größe übernehmen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (size == null || !mounted) return;
+    try {
+      await editor.resizePlan(size.$1, size.$2);
+      if (mounted) _showMessage('Raumgröße wurde geändert');
+    } on LayoutResizeException catch (error) {
+      if (!mounted) return;
+      final names = error.blockedSeats
+          .map(
+            (seat) =>
+                '${seat.displayName.isEmpty ? 'Belegter Platz' : seat.displayName} (${seat.row + 1}/${seat.col + 1})',
+          )
+          .join(', ');
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Verkleinern noch nicht möglich'),
+          content: Text(
+            'Verschiebe zuerst diese Schüler in den verbleibenden Bereich: $names',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Verstanden'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   void _showMessage(String message, {SnackBarAction? action}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -390,7 +542,10 @@ class _EditorScreenState extends State<EditorScreen> {
     final expanded = UiBreakpoints.isExpanded(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.plan.name),
+        title: Consumer<SeatingPlanEditorProvider>(
+          builder: (_, editor, _) =>
+              Text(editor.plan?.name ?? widget.plan.name),
+        ),
         actions: [
           if (compact) ...[
             IconButton(
@@ -419,6 +574,11 @@ class _EditorScreenState extends State<EditorScreen> {
           );
         },
       ),
+      bottomNavigationBar: compact
+          ? Consumer<SeatingPlanEditorProvider>(
+              builder: (_, editor, _) => _buildMobileDeskBar(editor),
+            )
+          : null,
     );
   }
 
@@ -437,6 +597,7 @@ class _EditorScreenState extends State<EditorScreen> {
         child: const Text('Freie Plätze dezenter'),
       ),
       const PopupMenuDivider(),
+      const PopupMenuItem(value: 'resize', child: Text('Raumgröße ändern')),
       const PopupMenuItem(value: 'csv', child: Text('Namensliste importieren')),
       const PopupMenuItem(value: 'photos', child: Text('Fotos importieren')),
       const PopupMenuDivider(),
@@ -455,6 +616,9 @@ class _EditorScreenState extends State<EditorScreen> {
       case 'csv':
         _importCsv();
         break;
+      case 'resize':
+        _showResizeDialog();
+        break;
       case 'photos':
         _importPhotos();
         break;
@@ -469,7 +633,8 @@ class _EditorScreenState extends State<EditorScreen> {
     required bool expanded,
   }) {
     final occupied = editor.seats.where((seat) => !seat.isEmpty).length;
-    final total = widget.plan.rows * widget.plan.columns;
+    final plan = editor.plan ?? widget.plan;
+    final total = plan.rows * plan.columns;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       decoration: BoxDecoration(
@@ -488,10 +653,33 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           const SizedBox(width: 8),
           Text(
-            '$occupied von $total Plätzen belegt',
+            expanded
+                ? '$occupied von $total Plätzen belegt'
+                : '$occupied/$total',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const Spacer(),
+          IconButton(
+            onPressed: editor.canUndo ? editor.undoLayout : null,
+            tooltip: editor.undoLabel == null
+                ? 'Nichts rückgängig zu machen'
+                : '${editor.undoLabel} rückgängig',
+            icon: const Icon(Icons.undo),
+          ),
+          IconButton(
+            onPressed: editor.canRedo ? editor.redoLayout : null,
+            tooltip: editor.redoLabel == null
+                ? 'Nichts zu wiederholen'
+                : '${editor.redoLabel} wiederholen',
+            icon: const Icon(Icons.redo),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: _showShuffleDialog,
+            icon: const Icon(Icons.casino_outlined),
+            label: Text(expanded ? 'Plätze mischen' : 'Mischen'),
+          ),
+          const SizedBox(width: 8),
           if (expanded) ...[
             FilterChip(
               selected: _showSeatNumbers,
@@ -514,30 +702,84 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             const SizedBox(width: 8),
           ],
-          FilledButton.icon(
-            onPressed: _exportPdf,
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('PDF exportieren'),
-          ),
+          if (expanded)
+            OutlinedButton.icon(
+              onPressed: _exportPdf,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('PDF exportieren'),
+            )
+          else
+            IconButton(
+              onPressed: _exportPdf,
+              tooltip: 'PDF exportieren',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+            ),
           _buildOverflowMenu(),
         ],
       ),
     );
   }
 
+  Widget _buildMobileDeskBar(SeatingPlanEditorProvider editor) => SafeArea(
+    top: false,
+    child: Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      elevation: 8,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: editor.canUndo ? editor.undoLayout : null,
+              tooltip: editor.undoLabel == null
+                  ? 'Nichts rückgängig zu machen'
+                  : '${editor.undoLabel} rückgängig',
+              icon: const Icon(Icons.undo),
+            ),
+            IconButton(
+              onPressed: editor.canRedo ? editor.redoLayout : null,
+              tooltip: editor.redoLabel == null
+                  ? 'Nichts zu wiederholen'
+                  : '${editor.redoLabel} wiederholen',
+              icon: const Icon(Icons.redo),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _showShuffleDialog,
+                icon: const Icon(Icons.casino_outlined),
+                label: const Text('Plätze mischen'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
   Widget _buildPlanCanvas(SeatingPlanEditorProvider editor) {
+    final plan = editor.plan ?? widget.plan;
+    final showPhotos = editor.seats.any(
+      (seat) => seat.photoPath?.isNotEmpty == true,
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 10.0;
         const minimumCellWidth = 112.0;
         const maximumCellWidth = 176.0;
         final available = constraints.maxWidth - 48;
-        final fitWidth =
-            (available - (widget.plan.columns - 1) * gap) / widget.plan.columns;
+        final fitWidth = (available - (plan.columns - 1) * gap) / plan.columns;
         final cellWidth = fitWidth.clamp(minimumCellWidth, maximumCellWidth);
         final cellHeight = cellWidth * 1.18;
-        final canvasWidth =
-            widget.plan.columns * cellWidth + (widget.plan.columns - 1) * gap;
+        final noPhotoFontSize = showPhotos
+            ? null
+            : _uniformNoPhotoFontSize(
+                editor.seats,
+                plan.extraLabels,
+                cellWidth,
+                cellHeight,
+              );
+        final canvasWidth = plan.columns * cellWidth + (plan.columns - 1) * gap;
 
         return Scrollbar(
           child: SingleChildScrollView(
@@ -548,19 +790,17 @@ class _EditorScreenState extends State<EditorScreen> {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    for (int row = widget.plan.rows - 1; row >= 0; row--)
+                    for (int row = plan.rows - 1; row >= 0; row--)
                       Padding(
                         padding: EdgeInsets.only(
-                          bottom: row < widget.plan.rows - 1 ? gap : 0,
+                          bottom: row < plan.rows - 1 ? gap : 0,
                         ),
                         child: Row(
                           children: [
-                            for (int col = 0; col < widget.plan.columns; col++)
+                            for (int col = 0; col < plan.columns; col++)
                               Padding(
                                 padding: EdgeInsets.only(
-                                  right: col < widget.plan.columns - 1
-                                      ? gap
-                                      : 0,
+                                  right: col < plan.columns - 1 ? gap : 0,
                                 ),
                                 child: SizedBox(
                                   width: cellWidth,
@@ -571,6 +811,8 @@ class _EditorScreenState extends State<EditorScreen> {
                                     editor,
                                     cellWidth,
                                     cellHeight,
+                                    showPhotos,
+                                    noPhotoFontSize,
                                   ),
                                 ),
                               ),
@@ -649,6 +891,8 @@ class _EditorScreenState extends State<EditorScreen> {
     SeatingPlanEditorProvider editor,
     double cellWidth,
     double cellHeight,
+    bool showPhotos,
+    double? noPhotoFontSize,
   ) {
     final seat = editor.getSeat(row, col);
     final isHovered = _dragOverRow == row && _dragOverCol == col;
@@ -663,29 +907,13 @@ class _EditorScreenState extends State<EditorScreen> {
       },
       onAcceptWithDetails: (details) async {
         final from = details.data;
-        final snapshots = [
-          SeatSnapshot(
-            row: from.row,
-            col: from.col,
-            seat: editor.getSeat(from.row, from.col),
-          ),
-          SeatSnapshot(row: row, col: col, seat: editor.getSeat(row, col)),
-        ];
         setState(() {
           _dragOverRow = null;
           _dragOverCol = null;
         });
         await editor.moveSeat(from.row, from.col, row, col);
         if (!mounted) return;
-        _showMessage(
-          'Gespeichert',
-          action: SnackBarAction(
-            label: 'Rückgängig',
-            onPressed: () {
-              editor.restorePositions(snapshots);
-            },
-          ),
-        );
+        _showMessage('Platzwechsel gespeichert');
       },
       onMove: (_) {
         if (_dragOverRow != row || _dragOverCol != col) {
@@ -706,10 +934,24 @@ class _EditorScreenState extends State<EditorScreen> {
       builder: (context, candidateData, rejectedData) {
         final card = SeatCard(
           seat: seat,
-          extraLabels: widget.plan.extraLabels,
+          extraLabels: (editor.plan ?? widget.plan).extraLabels,
           onTap: () => _openSeatDetail(row, col),
           positionLabel: _showSeatNumbers ? '${row + 1}/${col + 1}' : null,
           mutedEmpty: _muteEmptySeats,
+          showPhoto: showPhotos,
+          noPhotoFontSize: noPhotoFontSize,
+          onLockChanged: hasSeat
+              ? (locked) async {
+                  await editor.setSeatLocked(row, col, locked);
+                  if (mounted) {
+                    _showMessage(
+                      locked
+                          ? '${seat.displayName} bleibt beim Mischen sitzen'
+                          : '${seat.displayName} kann wieder gemischt werden',
+                    );
+                  }
+                }
+              : null,
         );
 
         // If seat is filled, make it draggable
@@ -788,6 +1030,85 @@ class _EditorScreenState extends State<EditorScreen> {
         );
       },
     );
+  }
+
+  double _uniformNoPhotoFontSize(
+    Iterable<Seat> seats,
+    List<String> labels,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final occupied = seats.where((seat) => !seat.isEmpty).toList();
+    if (occupied.isEmpty) return 22;
+    const horizontalPadding = 24.0;
+    const verticalPadding = 24.0;
+    final maxWidth = cellWidth - horizontalPadding;
+    final maxHeight = cellHeight - verticalPadding;
+    final textScaler = MediaQuery.textScalerOf(context);
+
+    bool fits(double nameSize) {
+      final detailSize = (nameSize * .58).clamp(9.0, 18.0);
+      for (final seat in occupied) {
+        var usedHeight = 0.0;
+        if (seat.displayName.isNotEmpty) {
+          final namePainter = TextPainter(
+            text: TextSpan(
+              text: seat.displayName,
+              style: TextStyle(
+                fontFamily: 'SitzplanDisplay',
+                fontSize: nameSize,
+                height: 1.02,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            textScaler: textScaler,
+            maxLines: 2,
+          )..layout(maxWidth: maxWidth);
+          if (namePainter.didExceedMaxLines) return false;
+          usedHeight += namePainter.height;
+        }
+        final visibleExtras = [
+          for (var index = 0; index < seat.extraInfos.length; index++)
+            if (seat.extraInfos[index]?.isNotEmpty == true)
+              index < labels.length && labels[index].isNotEmpty
+                  ? '${labels[index]}: ${seat.extraInfos[index]}'
+                  : seat.extraInfos[index]!,
+        ];
+        if (seat.displayName.isNotEmpty && visibleExtras.isNotEmpty) {
+          usedHeight += (nameSize * .25).clamp(4, 10);
+        }
+        for (final text in visibleExtras) {
+          final detailPainter = TextPainter(
+            text: TextSpan(
+              text: text,
+              style: TextStyle(fontSize: detailSize, height: 1.08),
+            ),
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            textScaler: textScaler,
+            maxLines: 2,
+          )..layout(maxWidth: maxWidth);
+          if (detailPainter.didExceedMaxLines) return false;
+          usedHeight += detailPainter.height + 2;
+        }
+        if (usedHeight > maxHeight) return false;
+      }
+      return true;
+    }
+
+    var low = 12.0;
+    var high = 42.0;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      final middle = (low + high) / 2;
+      if (fits(middle)) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
   }
 }
 

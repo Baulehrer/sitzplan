@@ -35,6 +35,10 @@ class PdfService {
         }
       }
     }
+    final noPictureMode = !seats.any(
+      (seat) => seat.photoPath?.isNotEmpty == true,
+    );
+    final noPictureFontSize = _noPictureFontSize(plan, seats);
 
     pdf.addPage(
       pw.Page(
@@ -79,6 +83,8 @@ class PdfService {
                               plan.columns,
                               plan.extraLabels,
                               options,
+                              noPictureMode,
+                              noPictureFontSize,
                             ),
                         ],
                       ),
@@ -106,6 +112,8 @@ class PdfService {
     int totalColumns,
     List<String> extraLabels,
     PdfExportOptions options,
+    bool noPictureMode,
+    double noPictureFontSize,
   ) {
     final cellHeight =
         (PdfPageFormat.a4.landscape.availableHeight - 76) / totalRows;
@@ -123,6 +131,40 @@ class PdfService {
             (label: extraLabels[index], value: seat.extraInfos[index]!),
     ];
     final hasName = options.includeNames && seat.displayName.isNotEmpty;
+    if (noPictureMode) {
+      return pw.Container(
+        height: cellHeight,
+        padding: const pw.EdgeInsets.all(6),
+        alignment: pw.Alignment.center,
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            if (hasName)
+              pw.Text(
+                seat.displayName,
+                style: pw.TextStyle(
+                  fontSize: noPictureFontSize,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                textAlign: pw.TextAlign.center,
+                maxLines: 2,
+              ),
+            if (hasName && visibleExtras.isNotEmpty) pw.SizedBox(height: 4),
+            for (final extra in visibleExtras)
+              pw.Text(
+                '${extra.label}: ${extra.value}',
+                style: pw.TextStyle(
+                  fontSize: math.max(6, noPictureFontSize * .55),
+                  color: PdfColors.grey700,
+                ),
+                textAlign: pw.TextAlign.center,
+                maxLines: 2,
+              ),
+          ],
+        ),
+      );
+    }
+
     final textHeight = (hasName ? 11.0 : 0) + visibleExtras.length * 7.0;
     final cellWidth =
         (PdfPageFormat.a4.landscape.availableWidth - 40) / totalColumns;
@@ -193,6 +235,36 @@ class PdfService {
         ],
       ),
     );
+  }
+
+  double _noPictureFontSize(SeatingPlan plan, List<Seat> seats) {
+    final cellWidth =
+        (PdfPageFormat.a4.landscape.availableWidth - 40) / plan.columns;
+    final cellHeight =
+        (PdfPageFormat.a4.landscape.availableHeight - 76) / plan.rows;
+    var longestName = 1;
+    var maximumLines = 1;
+    for (final seat in seats.where((seat) => !seat.isEmpty)) {
+      longestName = math.max(longestName, seat.displayName.length);
+      for (var index = 0; index < seat.extraInfos.length; index++) {
+        final value = seat.extraInfos[index];
+        if (value?.isNotEmpty != true) continue;
+        final label = index < plan.extraLabels.length
+            ? plan.extraLabels[index]
+            : '';
+        final detailLength = label.isEmpty
+            ? value!.length
+            : label.length + value!.length + 2;
+        longestName = math.max(longestName, (detailLength * .55).ceil());
+      }
+      maximumLines = math.max(
+        maximumLines,
+        1 + seat.extraInfos.where((value) => value?.isNotEmpty == true).length,
+      );
+    }
+    final widthLimited = (cellWidth - 12) * 2.5 / longestName;
+    final heightLimited = (cellHeight - 12) / (1.2 + (maximumLines - 1) * .7);
+    return math.min(28, math.max(8, math.min(widthLimited, heightLimited)));
   }
 
   pw.Widget _buildBoardMarker() => pw.Row(

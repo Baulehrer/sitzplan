@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sitzplan/models/seating_plan.dart';
 import 'package:sitzplan/theme/app_theme.dart';
 import 'package:sitzplan/widgets/seat_card.dart';
+import 'package:sitzplan/screens/seat_detail_screen.dart';
 
 void main() {
   Future<void> pumpCard(
@@ -66,6 +67,91 @@ void main() {
     );
 
     expect(find.text('Alexandra Mustermann-Schneider'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('filled seat exposes shuffle lock control', (tester) async {
+    var locked = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 160,
+            height: 190,
+            child: SeatCard(
+              seat: Seat(planId: 1, row: 0, col: 0, firstName: 'Ada'),
+              onTap: () {},
+              onLockChanged: (value) => locked = value,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Beim Mischen fixieren'));
+    expect(locked, isTrue);
+  });
+
+  testWidgets('no-picture seat uses large text without a photo placeholder', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 180,
+            height: 210,
+            child: SeatCard(
+              seat: Seat(
+                planId: 1,
+                row: 0,
+                col: 0,
+                firstName: 'Ada',
+                lastName: 'Lovelace',
+                extraInfo: 'Fensterplatz',
+              ),
+              extraLabels: const ['Bemerkung'],
+              showPhoto: false,
+              noPhotoFontSize: 30,
+              onTap: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final name = tester.widget<Text>(find.text('Ada Lovelace'));
+    expect(name.style?.fontSize, 30);
+    expect(find.text('Bemerkung: Fensterplatz'), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('seat editor offers save and continue on compact screens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SeatDetailScreen(
+            planId: 1,
+            row: 0,
+            col: 0,
+            onSave: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Speichern'), findsOneWidget);
+    expect(find.text('Speichern & weiter'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

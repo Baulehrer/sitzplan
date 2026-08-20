@@ -12,7 +12,7 @@ void main() {
     database = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onCreate: DatabaseService.createSchema,
       ),
     );
@@ -91,5 +91,29 @@ void main() {
       seatColumns.map((column) => column['name']),
       containsAll(['extra_info', 'extra_info_2', 'extra_info_3']),
     );
+  });
+
+  test('version 7 migration adds unlocked seat flag', () async {
+    await database.execute('ALTER TABLE seats DROP COLUMN is_locked');
+    await database.insert('seats', {'plan_id': 1, 'row': 0, 'col': 0});
+
+    await DatabaseService.upgradeSchema(database, 6, 7);
+
+    final rows = await database.query('seats');
+    expect(rows.single['is_locked'], 0);
+  });
+
+  test('locked state survives storage and plan duplication', () async {
+    final plan = await service.createPlan(
+      SeatingPlan(name: 'Testplan', rows: 1, columns: 2),
+    );
+    await service.upsertSeat(
+      Seat(planId: plan.id!, row: 0, col: 0, firstName: 'Ada', isLocked: true),
+    );
+
+    final duplicate = await service.duplicatePlan(plan, 'Kopie');
+    final copiedSeat = (await service.getSeats(duplicate.id!)).single;
+
+    expect(copiedSeat.isLocked, isTrue);
   });
 }

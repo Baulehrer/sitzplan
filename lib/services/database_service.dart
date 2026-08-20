@@ -51,7 +51,7 @@ class DatabaseService {
     return factory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 6,
+        version: 7,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -89,6 +89,7 @@ class DatabaseService {
             extra_info TEXT,
             extra_info_2 TEXT,
             extra_info_3 TEXT,
+            is_locked INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
           )
         ''');
@@ -143,6 +144,11 @@ class DatabaseService {
       await db.execute('ALTER TABLE seats ADD COLUMN extra_info_2 TEXT');
       await db.execute('ALTER TABLE seats ADD COLUMN extra_info_3 TEXT');
     }
+    if (oldVersion < 7 && newVersion >= 7) {
+      await db.execute(
+        'ALTER TABLE seats ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   Future<String?> getSetting(String key) async {
@@ -187,6 +193,22 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [plan.id],
     );
+  }
+
+  Future<void> replacePlanLayout(SeatingPlan plan, List<Seat> seats) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update(
+        'plans',
+        plan.copyWith(updatedAt: DateTime.now()).toMap(),
+        where: 'id = ?',
+        whereArgs: [plan.id],
+      );
+      await txn.delete('seats', where: 'plan_id = ?', whereArgs: [plan.id]);
+      for (final seat in seats.where((seat) => !seat.isEmpty)) {
+        await txn.insert('seats', seat.toMap());
+      }
+    });
   }
 
   Future<void> deletePlan(int planId) async {
@@ -415,6 +437,7 @@ class DatabaseService {
             extraInfo: seat.extraInfo,
             extraInfo2: seat.extraInfo2,
             extraInfo3: seat.extraInfo3,
+            isLocked: seat.isLocked,
           ),
         );
       }

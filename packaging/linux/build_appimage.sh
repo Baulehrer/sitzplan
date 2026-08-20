@@ -14,6 +14,10 @@ if [[ ! -x "$BUNDLE_DIR/sitzplan" ]]; then
   exit 1
 fi
 
+if [[ ! -x "$BUNDLE_DIR/ffmpeg" ]]; then
+  "$ROOT_DIR/packaging/bundle_ffmpeg.sh" "$BUNDLE_DIR" "linux-${ARCH/x86_64/x64}"
+fi
+
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/opt/sitzplan" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps" "$DIST_DIR"
 

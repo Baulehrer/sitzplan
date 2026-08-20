@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_selector/file_selector.dart';
@@ -28,7 +30,8 @@ class ImageService {
     return Platform.isAndroid ||
         Platform.isIOS ||
         Platform.isLinux ||
-        Platform.isWindows;
+        Platform.isWindows ||
+        Platform.isMacOS;
   }
 
   Future<String?> pickFromCamera() async {
@@ -47,7 +50,7 @@ class ImageService {
     }
 
     // Desktop: use ffmpeg to capture from webcam
-    if (Platform.isLinux || Platform.isWindows) {
+    if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
       return await _captureFromWebcam();
     }
 
@@ -57,42 +60,62 @@ class ImageService {
   Future<String?> _captureFromWebcam() async {
     final dir = await _photoDir;
     final tempPath = p.join(dir, '_webcam_temp.jpg');
+    final ffmpeg = await _ffmpegExecutable();
 
     try {
-      ProcessResult result;
+      late final List<String> arguments;
       if (Platform.isLinux) {
-        // Use ffmpeg to capture a single frame from /dev/video0
-        result = await Process.run('ffmpeg', [
+        final device = await _firstLinuxCamera();
+        arguments = [
           '-y',
           '-f',
           'v4l2',
           '-i',
-          '/dev/video0',
+          device,
           '-frames:v',
           '1',
           '-q:v',
           '2',
           tempPath,
-        ]);
-      } else {
-        // Windows: use dshow
-        result = await Process.run('ffmpeg', [
+        ];
+      } else if (Platform.isWindows) {
+        final device = await _firstWindowsCamera(ffmpeg);
+        arguments = [
           '-y',
           '-f',
           'dshow',
           '-i',
-          'video=Integrated Camera',
+          'video=$device',
           '-frames:v',
           '1',
           '-q:v',
           '2',
           tempPath,
-        ]);
+        ];
+      } else {
+        final deviceIndex = await _firstMacCamera(ffmpeg);
+        arguments = [
+          '-y',
+          '-f',
+          'avfoundation',
+          '-framerate',
+          '30',
+          '-i',
+          '$deviceIndex:none',
+          '-frames:v',
+          '1',
+          '-q:v',
+          '2',
+          tempPath,
+        ];
       }
 
+      final result = await _runFfmpeg(ffmpeg, arguments);
       if (result.exitCode != 0) {
         debugPrint('Webcam capture failed: ${result.stderr}');
-        return null;
+        throw CameraCaptureException(
+          'Die Kamera konnte kein Foto aufnehmen. Prüfe die Kameraberechtigung und ob eine andere Anwendung die Kamera verwendet.',
+        );
       }
 
       final file = File(tempPath);
@@ -102,10 +125,116 @@ class ImageService {
       // Clean up temp file
       await file.delete();
       return saved;
+    } on CameraCaptureException {
+      rethrow;
     } catch (e) {
       debugPrint('Webcam error: $e');
-      return null;
+      throw CameraCaptureException('Kameraaufnahme fehlgeschlagen: $e');
+    } finally {
+      final temp = File(tempPath);
+      if (await temp.exists()) await temp.delete();
     }
+  }
+
+  Future<String> _ffmpegExecutable() async {
+    final executableName = Platform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+    final bundled = File(
+      p.join(p.dirname(Platform.resolvedExecutable), executableName),
+    );
+    if (await bundled.exists()) return bundled.path;
+
+    try {
+      final result = await Process.run(executableName, ['-version']);
+      if (result.exitCode == 0) return executableName;
+    } catch (_) {
+      // A bundled executable is expected in release packages. Development
+      // builds may fall back to a system installation.
+    }
+    throw const CameraCaptureException(
+      'Das mitgelieferte Kameramodul wurde nicht gefunden. Installiere die App erneut.',
+    );
+  }
+
+  Future<String> _firstLinuxCamera() async {
+    final devices = await Directory('/dev')
+        .list()
+        .where((entry) => p.basename(entry.path).startsWith('video'))
+        .map((entry) => entry.path)
+        .toList();
+    devices.sort();
+    if (devices.isEmpty) {
+      throw const CameraCaptureException('Keine Kamera wurde erkannt.');
+    }
+    return devices.first;
+  }
+
+  Future<String> _firstWindowsCamera(String ffmpeg) async {
+    final result = await _runFfmpeg(ffmpeg, const [
+      '-hide_banner',
+      '-list_devices',
+      'true',
+      '-f',
+      'dshow',
+      '-i',
+      'dummy',
+    ]);
+    var match = RegExp(
+      r'"([^"]+)"\s+\(video\)',
+      caseSensitive: false,
+    ).firstMatch(result.stderr);
+    if (match == null) {
+      final videoSection = result.stderr
+          .split('DirectShow audio devices')
+          .first;
+      match = RegExp(r'"([^"@][^"]*)"').firstMatch(videoSection);
+    }
+    if (match == null) {
+      throw const CameraCaptureException(
+        'Keine Windows-Kamera wurde erkannt. Prüfe die Kamera-Berechtigung in den Windows-Einstellungen.',
+      );
+    }
+    return match.group(1)!;
+  }
+
+  Future<String> _firstMacCamera(String ffmpeg) async {
+    final result = await _runFfmpeg(ffmpeg, const [
+      '-hide_banner',
+      '-f',
+      'avfoundation',
+      '-list_devices',
+      'true',
+      '-i',
+      '',
+    ]);
+    final videoSection = result.stderr
+        .split('AVFoundation audio devices')
+        .first;
+    final matches = RegExp(r'\[(\d+)\]\s+.+').allMatches(videoSection);
+    if (matches.isEmpty) {
+      throw const CameraCaptureException(
+        'Keine macOS-Kamera wurde erkannt. Erlaube den Kamerazugriff in den Systemeinstellungen.',
+      );
+    }
+    return matches.first.group(1)!;
+  }
+
+  Future<_ProcessOutput> _runFfmpeg(
+    String executable,
+    List<String> arguments,
+  ) async {
+    final process = await Process.start(executable, arguments);
+    final stdoutFuture = utf8.decoder.bind(process.stdout).join();
+    final stderrFuture = utf8.decoder.bind(process.stderr).join();
+    late final int exitCode;
+    try {
+      exitCode = await process.exitCode.timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      process.kill();
+      throw const CameraCaptureException(
+        'Die Kamera hat nicht rechtzeitig geantwortet.',
+      );
+    }
+    return _ProcessOutput(exitCode, await stdoutFuture, await stderrFuture);
   }
 
   Future<String?> pickFromGallery() async {
@@ -187,4 +316,21 @@ class ImageService {
     final file = File(path);
     if (await file.exists()) await file.delete();
   }
+}
+
+class CameraCaptureException implements Exception {
+  final String message;
+
+  const CameraCaptureException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class _ProcessOutput {
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+
+  const _ProcessOutput(this.exitCode, this.stdout, this.stderr);
 }

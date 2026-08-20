@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import '../models/seating_plan.dart';
@@ -97,17 +98,28 @@ class SeatingPlanListProvider extends ChangeNotifier {
 }
 
 class SeatingPlanEditorProvider extends ChangeNotifier {
-  final _db = DatabaseService();
+  final DatabaseService _db;
+  final Random _random;
   SeatingPlan? _plan;
   List<Seat> _seats = [];
   Map<String, Seat> _seatByPosition = {};
   bool _loading = false;
   Object? _error;
+  final List<_LayoutHistoryEntry> _undoStack = [];
+  final List<_LayoutHistoryEntry> _redoStack = [];
+
+  SeatingPlanEditorProvider({DatabaseService? database, Random? random})
+    : _db = database ?? DatabaseService(),
+      _random = random ?? Random();
 
   SeatingPlan? get plan => _plan;
   UnmodifiableListView<Seat> get seats => UnmodifiableListView(_seats);
   bool get loading => _loading;
   Object? get error => _error;
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
+  String? get undoLabel => canUndo ? _undoStack.last.label : null;
+  String? get redoLabel => canRedo ? _redoStack.last.label : null;
 
   Seat? getSeat(int row, int col) => _seatByPosition[_positionKey(row, col)];
 
@@ -115,6 +127,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     _loading = true;
     _error = null;
     _plan = plan;
+    _clearHistory();
     notifyListeners();
     try {
       _setSeats(await _db.getSeats(plan.id!));
@@ -141,6 +154,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
       _seats.add(saved);
     }
     _rebuildSeatIndex();
+    _clearHistory();
     notifyListeners();
   }
 
@@ -151,6 +165,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     }
     _seats.removeWhere((s) => s.row == row && s.col == col);
     _seatByPosition.remove(_positionKey(row, col));
+    _clearHistory();
     notifyListeners();
   }
 
@@ -158,6 +173,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     if (_plan == null) return;
     await _db.deleteSeatsForPlan(_plan!.id!);
     _setSeats([]);
+    _clearHistory();
     notifyListeners();
   }
 
@@ -193,6 +209,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     }
 
     _setSeats(await _db.getSeats(_plan!.id!));
+    _clearHistory();
     notifyListeners();
     return added;
   }
@@ -220,6 +237,7 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     }
 
     _setSeats(await _db.getSeats(_plan!.id!));
+    _clearHistory();
     notifyListeners();
     return added;
   }
@@ -231,33 +249,184 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
     final fromSeat = getSeat(fromRow, fromCol);
     if (_plan == null || fromSeat == null || fromSeat.isEmpty) return;
 
-    await _db.moveSeat(_plan!.id!, fromRow, fromCol, toRow, toCol);
-    _setSeats(await _db.getSeats(_plan!.id!));
+    final target = getSeat(toRow, toCol);
+    final updated = List<Seat>.from(_seats);
+    final fromIndex = updated.indexWhere((seat) => seat.id == fromSeat.id);
+    updated[fromIndex] = fromSeat.copyWith(row: toRow, col: toCol);
+    if (target != null && !target.isEmpty) {
+      final targetIndex = updated.indexWhere((seat) => seat.id == target.id);
+      updated[targetIndex] = target.copyWith(row: fromRow, col: fromCol);
+    }
+    await _commitLayout('Platzwechsel', _plan!, updated);
+  }
+
+  Future<void> setSeatLocked(int row, int col, bool locked) async {
+    final seat = getSeat(row, col);
+    if (seat == null || seat.isEmpty || seat.isLocked == locked) return;
+    final saved = await _db.upsertSeat(seat.copyWith(isLocked: locked));
+    final index = _seats.indexWhere((item) => item.id == saved.id);
+    _seats[index] = saved;
+    _rebuildSeatIndex();
+    _clearHistory();
     notifyListeners();
   }
 
-  Future<void> restorePositions(List<SeatSnapshot> snapshots) async {
-    if (_plan == null) return;
-    await _db.restoreSeatPositions(
-      _plan!.id!,
-      snapshots
-          .map(
-            (snapshot) => SeatPositionSnapshot(
-              row: snapshot.row,
-              col: snapshot.col,
-              seat: snapshot.seat,
-            ),
-          )
-          .toList(),
+  Future<bool> shuffleSeats(ShuffleMode mode) async {
+    if (_plan == null) return false;
+    final movable = _seats
+        .where((seat) => !seat.isEmpty && !seat.isLocked)
+        .toList();
+    if (movable.length < 2) return false;
+
+    final lockedPositions = {
+      for (final seat in _seats.where((seat) => seat.isLocked))
+        _positionKey(seat.row, seat.col),
+    };
+    final available = mode == ShuffleMode.occupiedPositions
+        ? movable.map((seat) => _GridPosition(seat.row, seat.col)).toList()
+        : [
+            for (var row = 0; row < _plan!.rows; row++)
+              for (var col = 0; col < _plan!.columns; col++)
+                if (!lockedPositions.contains(_positionKey(row, col)))
+                  _GridPosition(row, col),
+          ];
+
+    List<_GridPosition>? targets;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      final candidate = List<_GridPosition>.from(available)..shuffle(_random);
+      final selected = candidate.take(movable.length).toList();
+      if (_positionsChanged(movable, selected)) {
+        targets = selected;
+        break;
+      }
+    }
+    targets ??= _firstChangedAssignment(movable, available);
+    if (targets == null) return false;
+
+    final movableIds = movable.map((seat) => seat.id).toSet();
+    final updated = _seats
+        .where((seat) => !movableIds.contains(seat.id))
+        .toList();
+    for (var index = 0; index < movable.length; index++) {
+      updated.add(
+        movable[index].copyWith(
+          row: targets[index].row,
+          col: targets[index].col,
+        ),
+      );
+    }
+    await _commitLayout('Zufallsverteilung', _plan!, updated);
+    return true;
+  }
+
+  Future<void> resizePlan(int rows, int columns) async {
+    if (_plan == null || (rows == _plan!.rows && columns == _plan!.columns)) {
+      return;
+    }
+    final blocked = _seats
+        .where((seat) => seat.row >= rows || seat.col >= columns)
+        .toList();
+    if (blocked.isNotEmpty) throw LayoutResizeException(blocked);
+    await _commitLayout(
+      'Raumgröße geändert',
+      _plan!.copyWith(rows: rows, columns: columns),
+      _seats,
     );
-    _setSeats(await _db.getSeats(_plan!.id!));
+  }
+
+  Future<void> undoLayout() async {
+    if (!canUndo) return;
+    final entry = _undoStack.removeLast();
+    await _applySnapshot(entry.before);
+    _redoStack.add(entry);
     notifyListeners();
+  }
+
+  Future<void> redoLayout() async {
+    if (!canRedo) return;
+    final entry = _redoStack.removeLast();
+    await _applySnapshot(entry.after);
+    _undoStack.add(entry);
+    notifyListeners();
+  }
+
+  SeatGridPosition? findNextFreePosition(int row, int col) {
+    if (_plan == null) return null;
+    final positions = [
+      for (var currentRow = _plan!.rows - 1; currentRow >= 0; currentRow--)
+        for (var currentCol = 0; currentCol < _plan!.columns; currentCol++)
+          SeatGridPosition(currentRow, currentCol),
+    ];
+    final currentIndex = positions.indexWhere(
+      (position) => position.row == row && position.col == col,
+    );
+    for (var offset = 1; offset < positions.length; offset++) {
+      final position = positions[(currentIndex + offset) % positions.length];
+      final seat = getSeat(position.row, position.col);
+      if (seat == null || seat.isEmpty) return position;
+    }
+    return null;
   }
 
   void clear() {
     _plan = null;
     _setSeats([]);
+    _clearHistory();
     notifyListeners();
+  }
+
+  Future<void> _commitLayout(
+    String label,
+    SeatingPlan updatedPlan,
+    List<Seat> updatedSeats,
+  ) async {
+    final before = _snapshot();
+    final after = _LayoutSnapshot(updatedPlan, List<Seat>.from(updatedSeats));
+    await _db.replacePlanLayout(updatedPlan, updatedSeats);
+    _plan = updatedPlan;
+    _setSeats(updatedSeats);
+    _undoStack.add(_LayoutHistoryEntry(label, before, after));
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _redoStack.clear();
+    notifyListeners();
+  }
+
+  Future<void> _applySnapshot(_LayoutSnapshot snapshot) async {
+    await _db.replacePlanLayout(snapshot.plan, snapshot.seats);
+    _plan = snapshot.plan;
+    _setSeats(snapshot.seats);
+  }
+
+  _LayoutSnapshot _snapshot() =>
+      _LayoutSnapshot(_plan!, List<Seat>.from(_seats));
+
+  void _clearHistory() {
+    _undoStack.clear();
+    _redoStack.clear();
+  }
+
+  bool _positionsChanged(List<Seat> seats, List<_GridPosition> positions) {
+    for (var index = 0; index < seats.length; index++) {
+      if (seats[index].row != positions[index].row ||
+          seats[index].col != positions[index].col) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<_GridPosition>? _firstChangedAssignment(
+    List<Seat> seats,
+    List<_GridPosition> positions,
+  ) {
+    for (var offset = 1; offset < positions.length; offset++) {
+      final candidate = [
+        for (var index = 0; index < seats.length; index++)
+          positions[(index + offset) % positions.length],
+      ];
+      if (_positionsChanged(seats, candidate)) return candidate;
+    }
+    return null;
   }
 
   void _setSeats(List<Seat> seats) {
@@ -274,14 +443,39 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   String _positionKey(int row, int col) => '$row:$col';
 }
 
-class SeatSnapshot {
+enum ShuffleMode { occupiedPositions, allAvailablePositions }
+
+class LayoutResizeException implements Exception {
+  final List<Seat> blockedSeats;
+
+  const LayoutResizeException(this.blockedSeats);
+}
+
+class SeatGridPosition {
   final int row;
   final int col;
-  final Seat? seat;
 
-  const SeatSnapshot({
-    required this.row,
-    required this.col,
-    required this.seat,
-  });
+  const SeatGridPosition(this.row, this.col);
+}
+
+class _GridPosition {
+  final int row;
+  final int col;
+
+  const _GridPosition(this.row, this.col);
+}
+
+class _LayoutSnapshot {
+  final SeatingPlan plan;
+  final List<Seat> seats;
+
+  const _LayoutSnapshot(this.plan, this.seats);
+}
+
+class _LayoutHistoryEntry {
+  final String label;
+  final _LayoutSnapshot before;
+  final _LayoutSnapshot after;
+
+  const _LayoutHistoryEntry(this.label, this.before, this.after);
 }

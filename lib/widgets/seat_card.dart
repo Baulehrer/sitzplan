@@ -8,6 +8,9 @@ class SeatCard extends StatelessWidget {
   final String? positionLabel;
   final bool mutedEmpty;
   final List<String> extraLabels;
+  final ValueChanged<bool>? onLockChanged;
+  final bool showPhoto;
+  final double? noPhotoFontSize;
 
   const SeatCard({
     super.key,
@@ -16,6 +19,9 @@ class SeatCard extends StatelessWidget {
     this.positionLabel,
     this.mutedEmpty = false,
     this.extraLabels = const [],
+    this.onLockChanged,
+    this.showPhoto = true,
+    this.noPhotoFontSize,
   });
 
   @override
@@ -79,6 +85,21 @@ class SeatCard extends StatelessWidget {
     );
   }
 
+  Widget _buildLockButton(ThemeData theme) {
+    final locked = seat?.isLocked ?? false;
+    return Positioned(
+      top: 2,
+      right: 2,
+      child: IconButton.filledTonal(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        tooltip: locked ? 'Beim Mischen freigeben' : 'Beim Mischen fixieren',
+        onPressed: () => onLockChanged!(!locked),
+        icon: Icon(locked ? Icons.lock : Icons.lock_open, size: 17),
+      ),
+    );
+  }
+
   Widget _buildFilledSeat(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surfaceContainerLowest,
@@ -90,50 +111,100 @@ class SeatCard extends StatelessWidget {
             bottom: 0,
             child: Container(width: 4, color: theme.colorScheme.secondary),
           ),
-          Column(
-            children: [
-              // Photo — large
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 8, 4),
-                  child: _buildPhoto(theme),
+          if (showPhoto)
+            Column(
+              children: [
+                // Photo — large
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 8, 4),
+                    child: _buildPhoto(theme),
+                  ),
+                ),
+                if (seat!.displayName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(5, 1, 5, 0),
+                    child: Text(
+                      seat!.displayName,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                for (final extra in _visibleExtras)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
+                    child: Text(
+                      extra.label.isEmpty
+                          ? extra.value
+                          : '${extra.label}: ${extra.value}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                        fontSize: 8.5,
+                        height: 1.05,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const SizedBox(height: 2),
+              ],
+            )
+          else
+            _buildTextOnlySeat(theme),
+          if (positionLabel != null) _buildPositionLabel(theme),
+          if (onLockChanged != null) _buildLockButton(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextOnlySeat(ThemeData theme) {
+    final nameSize = noPhotoFontSize ?? 22;
+    final detailSize = (nameSize * .58).clamp(9.0, 18.0);
+    return Positioned.fill(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (seat!.displayName.isNotEmpty)
+              Text(
+                seat!.displayName,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontSize: nameSize,
+                  height: 1.02,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            if (seat!.displayName.isNotEmpty && _visibleExtras.isNotEmpty)
+              SizedBox(height: (nameSize * .25).clamp(4, 10)),
+            for (final extra in _visibleExtras)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  extra.label.isEmpty
+                      ? extra.value
+                      : '${extra.label}: ${extra.value}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: detailSize,
+                    height: 1.08,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (seat!.displayName.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(5, 1, 5, 0),
-                  child: Text(
-                    seat!.displayName,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              for (final extra in _visibleExtras)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
-                  child: Text(
-                    extra.label.isEmpty
-                        ? extra.value
-                        : '${extra.label}: ${extra.value}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                      fontSize: 8.5,
-                      height: 1.05,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              const SizedBox(height: 2),
-            ],
-          ),
-          if (positionLabel != null) _buildPositionLabel(theme),
-        ],
+          ],
+        ),
       ),
     );
   }
