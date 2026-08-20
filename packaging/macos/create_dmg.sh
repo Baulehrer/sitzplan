@@ -20,8 +20,9 @@ if [[ "$MACHINE_ARCH" == "arm64" ]]; then
   FFMPEG_ARCH="arm64"
 fi
 "$ROOT_DIR/packaging/bundle_ffmpeg.sh" \
-  "$APP_PATH/Contents/MacOS" \
+  "$APP_PATH/Contents/Resources" \
   "darwin-$FFMPEG_ARCH"
+mv "$APP_PATH/Contents/Resources/ffmpeg" "$APP_PATH/Contents/MacOS/ffmpeg"
 codesign --force --sign - \
   --entitlements "$ROOT_DIR/macos/Runner/Ffmpeg.entitlements" \
   "$APP_PATH/Contents/MacOS/ffmpeg"
