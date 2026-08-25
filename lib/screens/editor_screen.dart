@@ -6,6 +6,7 @@ import '../widgets/seat_card.dart';
 import '../services/image_service.dart';
 import '../services/import_export_service.dart';
 import '../services/pdf_service.dart';
+import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import 'seat_detail_screen.dart';
 
@@ -92,6 +93,8 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _exportPdf() async {
     final editor = context.read<SeatingPlanEditorProvider>();
     if (editor.plan == null) return;
+    final classListSettings = await _loadClassListSettings();
+    if (!mounted) return;
 
     var includePhotos = true;
     var includeNames = true;
@@ -100,7 +103,8 @@ class _EditorScreenState extends State<EditorScreen> {
     var photoBrightness = 1.0;
     var photoContrast = 1.0;
     var photoGamma = 1.0;
-    final options = await showDialog<PdfExportOptions>(
+    var classListSort = ClassListSort.alphabetical;
+    var options = await showDialog<PdfExportOptions>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -135,6 +139,33 @@ class _EditorScreenState extends State<EditorScreen> {
                       title: const Text('Zusatzinfo anzeigen'),
                       contentPadding: EdgeInsets.zero,
                     ),
+                  const Divider(height: 28),
+                  Text(
+                    'Klassenliste',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                  RadioGroup<ClassListSort>(
+                    groupValue: classListSort,
+                    onChanged: (value) =>
+                        setDialogState(() => classListSort = value!),
+                    child: const Column(
+                      children: [
+                        RadioListTile<ClassListSort>(
+                          value: ClassListSort.alphabetical,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Alphabetisch nach Nachname'),
+                        ),
+                        RadioListTile<ClassListSort>(
+                          value: ClassListSort.individual,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Individuelle Reihenfolge festlegen'),
+                          subtitle: Text(
+                            'Die Reihenfolge wird vor dem Export per Drag & Drop festgelegt.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (includePhotos) ...[
                     const Divider(height: 28),
                     Text(
@@ -254,6 +285,8 @@ class _EditorScreenState extends State<EditorScreen> {
                   photoBrightness: photoBrightness,
                   photoContrast: photoContrast,
                   photoGamma: photoGamma,
+                  classListSort: classListSort,
+                  classListSettings: classListSettings,
                 ),
               ),
               child: const Text('Exportieren'),
@@ -263,6 +296,12 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
     if (options == null || !mounted) return;
+
+    if (options.classListSort == ClassListSort.individual) {
+      final order = await _showClassListOrderDialog(editor.seats);
+      if (order == null || !mounted) return;
+      options = options.copyWith(classListOrder: order);
+    }
 
     try {
       await PdfService().exportAndShare(
@@ -274,6 +313,173 @@ class _EditorScreenState extends State<EditorScreen> {
     } catch (error) {
       if (mounted) _showMessage('PDF konnte nicht erstellt werden: $error');
     }
+  }
+
+  Future<ClassListSettings> _loadClassListSettings() async {
+    final stored = await DatabaseService().getSetting(
+      ClassListSettings.storageKey,
+    );
+    return stored == null
+        ? const ClassListSettings()
+        : ClassListSettings.fromJson(stored);
+  }
+
+  Future<void> _showClassListSettings() async {
+    final current = await _loadClassListSettings();
+    if (!mounted) return;
+    final number = TextEditingController(
+      text: current.numberWidthCm.toString(),
+    );
+    final lastName = TextEditingController(
+      text: current.lastNameWidthCm.toString(),
+    );
+    final firstName = TextEditingController(
+      text: current.firstNameWidthCm.toString(),
+    );
+    final remarks = TextEditingController(
+      text: current.remarksWidthCm.toString(),
+    );
+    final rowHeight = TextEditingController(
+      text: current.rowHeightCm.toString(),
+    );
+    try {
+      final settings = await showDialog<ClassListSettings>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Klassenliste einrichten'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _classListMeasureField(number, 'Nr. (cm)'),
+                _classListMeasureField(lastName, 'Name (cm)'),
+                _classListMeasureField(firstName, 'Vorname (cm)'),
+                _classListMeasureField(remarks, 'Bemerkungen gesamt (cm)'),
+                _classListMeasureField(rowHeight, 'Zeilenhöhe (cm)'),
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Die Bemerkungsbreite wird immer auf drei gleich breite Spalten verteilt.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () {
+                double parse(TextEditingController controller) =>
+                    double.tryParse(
+                      controller.text.trim().replaceAll(',', '.'),
+                    ) ??
+                    -1;
+                final value = ClassListSettings(
+                  numberWidthCm: parse(number),
+                  lastNameWidthCm: parse(lastName),
+                  firstNameWidthCm: parse(firstName),
+                  remarksWidthCm: parse(remarks),
+                  rowHeightCm: parse(rowHeight),
+                );
+                if (!value.isValid) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Bitte positive Maße eingeben; zusammen dürfen die Spalten maximal 19 cm breit sein.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, value);
+              },
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
+      );
+      if (settings != null) {
+        await DatabaseService().setSetting(
+          ClassListSettings.storageKey,
+          settings.toJson(),
+        );
+        if (mounted) _showMessage('Klassenlisten-Maße gespeichert');
+      }
+    } finally {
+      number.dispose();
+      lastName.dispose();
+      firstName.dispose();
+      remarks.dispose();
+      rowHeight.dispose();
+    }
+  }
+
+  Widget _classListMeasureField(
+    TextEditingController controller,
+    String label,
+  ) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+    ),
+  );
+
+  Future<List<Seat>?> _showClassListOrderDialog(List<Seat> seats) {
+    final students = seats.where((seat) => !seat.isEmpty).toList();
+    return showDialog<List<Seat>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Klassenliste sortieren'),
+          content: SizedBox(
+            width: 440,
+            height: 480,
+            child: ReorderableListView.builder(
+              itemCount: students.length,
+              buildDefaultDragHandles: false,
+              itemBuilder: (_, index) {
+                final seat = students[index];
+                final name = seat.displayName.isEmpty
+                    ? 'Ohne Namen'
+                    : seat.displayName;
+                return ListTile(
+                  key: ValueKey(seat.id ?? '${seat.row}_${seat.col}'),
+                  leading: Text('${index + 1}.'),
+                  title: Text(name),
+                  trailing: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle),
+                  ),
+                );
+              },
+              onReorderItem: (oldIndex, newIndex) => setDialogState(() {
+                final item = students.removeAt(oldIndex);
+                students.insert(newIndex, item);
+              }),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, students),
+              child: const Text('Reihenfolge übernehmen'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildAdjustmentSlider({
@@ -598,6 +804,10 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
       const PopupMenuDivider(),
       const PopupMenuItem(value: 'resize', child: Text('Raumgröße ändern')),
+      const PopupMenuItem(
+        value: 'class_list_settings',
+        child: Text('Klassenliste einrichten'),
+      ),
       const PopupMenuItem(value: 'csv', child: Text('Namensliste importieren')),
       const PopupMenuItem(value: 'photos', child: Text('Fotos importieren')),
       const PopupMenuDivider(),
@@ -605,7 +815,7 @@ class _EditorScreenState extends State<EditorScreen> {
     ],
   );
 
-  void _handleMenuAction(String value) {
+  Future<void> _handleMenuAction(String value) async {
     switch (value) {
       case 'numbers':
         setState(() => _showSeatNumbers = !_showSeatNumbers);
@@ -614,16 +824,19 @@ class _EditorScreenState extends State<EditorScreen> {
         setState(() => _muteEmptySeats = !_muteEmptySeats);
         break;
       case 'csv':
-        _importCsv();
+        await _importCsv();
         break;
       case 'resize':
-        _showResizeDialog();
+        await _showResizeDialog();
+        break;
+      case 'class_list_settings':
+        await _showClassListSettings();
         break;
       case 'photos':
-        _importPhotos();
+        await _importPhotos();
         break;
       case 'clear':
-        _clearSeats();
+        await _clearSeats();
         break;
     }
   }

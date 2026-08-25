@@ -44,7 +44,7 @@ flutter test
 
 ## Release
 
-Aktuelle Version: `1.5.0`
+Aktuelle Version: `1.6.0`
 
 GitHub Actions erstellt bei Tags wie `v1.5.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
 

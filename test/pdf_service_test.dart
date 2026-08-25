@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:sitzplan/models/seating_plan.dart';
 import 'package:sitzplan/services/pdf_service.dart';
 
 void main() {
@@ -41,5 +42,36 @@ void main() {
     );
 
     expect(adjusted, same(original));
+  });
+
+  test('class-list settings roundtrip and reject an A4 overflow', () {
+    const settings = ClassListSettings();
+
+    expect(ClassListSettings.fromJson(settings.toJson()).totalWidthCm, 18.9);
+    expect(const ClassListSettings(remarksWidthCm: 13).isValid, isFalse);
+  });
+
+  test('PDF contains the seating plan and class-list pages', () async {
+    final bytes = await PdfService().buildPdf(
+      SeatingPlan(
+        name: 'Klasse 7a',
+        rows: 1,
+        columns: 2,
+        extraLabel: 'Betrieb',
+      ),
+      [
+        Seat(
+          planId: 1,
+          row: 0,
+          col: 0,
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          extraInfo: 'Analytik',
+        ),
+      ],
+    );
+
+    expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    expect(bytes.length, greaterThan(1000));
   });
 }
