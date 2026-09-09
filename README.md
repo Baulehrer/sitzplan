@@ -44,24 +44,24 @@ flutter test
 
 ## Release
 
-Aktuelle Version: `1.6.0`
+Aktuelle Version: `1.7.0`
 
-GitHub Actions erstellt bei Tags wie `v1.5.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
+GitHub Actions erstellt bei Tags wie `v1.7.0` automatisch Release-Artefakte für Linux, Windows, macOS, Android und iOS.
 
 Desktop-Artefakte:
 
-- Windows: `Sitzplan-1.5.0-Setup.exe`
-- Linux: `Sitzplan-1.5.0-x86_64.AppImage`
-- macOS: `Sitzplan-1.5.0-macos.dmg`
-- Android: `Sitzplan-1.5.0-android.apk`
+- Windows: `Sitzplan-1.7.0-Setup.exe`
+- Linux: `Sitzplan-1.7.0-x86_64.AppImage`
+- macOS: `Sitzplan-1.7.0-macos.dmg`
+- Android: `Sitzplan-1.7.0-android.apk`
 
-Der Windows-Installer und die macOS-DMG sind aktuell nicht signiert. Auf macOS kann Gatekeeper deshalb beim ersten Start eine Sicherheitsabfrage anzeigen. Das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert; für TestFlight oder App Store sind zusätzliche Signing-Secrets nötig.
+Der Windows-Installer und seine ausführbaren Bestandteile werden per Microsoft Artifact Signing signiert und mit einem RFC-3161-Zeitstempel versehen. Die Release-Pipeline bricht ab, wenn eine Signatur fehlt oder ungültig ist. Bei einer neuen Publisher-Identität kann Microsoft Defender SmartScreen trotzdem vorübergehend eine Reputationswarnung anzeigen. Die macOS-DMG ist nur ad-hoc-signiert; das iOS-Artefakt ist ohne Apple-Zertifikate unsigniert.
 
 Damit Android Folgeversionen als Update akzeptiert, verlangt der Release-Workflow eine dauerhafte Signatur über die GitHub-Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` und `ANDROID_STORE_PASSWORD`. Lokale Release-Builds fallen weiterhin auf die Debug-Signatur zurück.
 
 Hinweis für den Übergang: Die früheren APKs 1.3.5 und 1.4.0 wurden nachweislich mit unterschiedlichen temporären Debug-Zertifikaten gebaut. Deshalb muss Android 1.5.0 einmalig manuell neu installiert werden; wichtige Sitzpläne vorher exportieren. Ab der dauerhaft signierten 1.5.0 funktionieren Folgeupdates regulär über den Systeminstaller.
 
-Die Desktop-Pakete enthalten ein passendes FFmpeg-Kameramodul. Unter Windows und macOS wird die vorhandene Kamera automatisch erkannt; unter Linux wird das erste verfügbare `/dev/video*`-Gerät verwendet. Android und iOS nutzen die native Kamera des Systems. Beim ersten Aufnehmen kann das Betriebssystem nach der Kameraberechtigung fragen.
+Die Desktop-Pakete enthalten ein fest versioniertes FFmpeg-9.0.1-Kameramodul. Archiv und SHA-256-Prüfsumme sind im Buildskript fixiert und die Herkunft wird im Paket dokumentiert. Unter Windows und macOS wird die vorhandene Kamera automatisch erkannt; unter Linux wird das erste verfügbare `/dev/video*`-Gerät verwendet. Android und iOS nutzen die native Kamera des Systems. Beim ersten Aufnehmen kann das Betriebssystem nach der Kameraberechtigung fragen.
 
 ### Automatische Updates
 
@@ -79,4 +79,4 @@ flutter build apk --release
 
 MIT
 
-Die Desktop-Release-Pakete enthalten FFmpeg als separat ausgeführte Komponente unter GPL-3.0-or-later. Lizenz- und Buildhinweise liegen dem jeweiligen Paket als `FFMPEG-LICENSE.txt` und `FFMPEG-README.txt` bei.
+Die Desktop-Release-Pakete enthalten FFmpeg als separat ausgeführte Komponente unter GPL-3.0-or-later. Lizenz-, Quellen-, Archiv- und Prüfsummenhinweise liegen dem jeweiligen Paket als `FFMPEG-LICENSE.txt` und `FFMPEG-README.txt` bei. Alle GitHub-Release-Dateien werden zusätzlich in `SHA256SUMS.txt` aufgeführt.

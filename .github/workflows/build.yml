@@ -7,10 +7,10 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  FLUTTER_CHANNEL: stable
+  FLUTTER_VERSION: 3.47.2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -26,9 +26,13 @@ jobs:
         run: |
           echo "value=$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)" >> "$GITHUB_OUTPUT"
           echo "build_number=$(sed -n 's/^version: [^+]*+\(.*\)/\1/p' pubspec.yaml)" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match pubspec version" >&2
+            exit 1
+          fi
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: flutter analyze
@@ -45,7 +49,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev liblzma-dev
       - run: flutter pub get
@@ -61,25 +65,76 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     needs: validate
     runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
     env:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
+      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release --build-name "${{ env.APP_VERSION }}" --build-number "${{ env.APP_BUILD_NUMBER }}"
       - name: Bundle camera runtime
         shell: bash
         run: packaging/bundle_ffmpeg.sh build/windows/x64/runner/Release win32-x64 ffmpeg.exe
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-      - name: Build installer
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows application files
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\build\windows\x64\runner\Release
+          files-folder-filter: exe,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Install installer and signing tools
         shell: pwsh
-        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\sitzplan.iss'
+        run: |
+          choco install innosetup --no-progress -y
+          $msi = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
+          Invoke-WebRequest -Uri 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi' -OutFile $msi
+          $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $msi, '/quiet', '/norestart')
+          if ($process.ExitCode -ne 0) { throw "Artifact Signing tools installation failed: $($process.ExitCode)" }
+      - name: Build and sign installer and uninstaller
+        shell: pwsh
+        run: |
+          $script = Join-Path $env:GITHUB_WORKSPACE 'packaging\windows\sign-artifact.ps1'
+          $definition = 'artifactsign=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q' + $script + '$q $f'
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/S$definition" packaging\windows\sitzplan.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
+      - name: Verify Authenticode signatures
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem build\windows\x64\runner\Release -Recurse -Include *.exe,*.dll
+            Get-ChildItem dist -Filter *.exe
+          )
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature: $($file.FullName) ($($signature.Status))"
+            }
+            if ($signature.SignerCertificate.Subject -notlike "*${{ vars.WINDOWS_PUBLISHER }}*") {
+              throw "Unexpected publisher for $($file.FullName): $($signature.SignerCertificate.Subject)"
+            }
+          }
       - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-windows-installer
@@ -88,7 +143,7 @@ jobs:
   build-macos:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     needs: validate
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     env:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
@@ -96,7 +151,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: flutter build macos --release --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
@@ -118,7 +173,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - name: Build unsigned iOS app
@@ -151,7 +206,7 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - name: Configure stable Android signing
@@ -182,12 +237,24 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [validate, build-linux, build-windows, build-macos, build-ios, build-android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     env:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
     steps:
       - uses: actions/download-artifact@v5
         with:
           merge-multiple: true
+      - name: Create SHA-256 checksums
+        run: sha256sum Sitzplan-* sitzplan-ios-unsigned.zip > SHA256SUMS.txt
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            Sitzplan-*
+            sitzplan-ios-unsigned.zip
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
@@ -198,3 +265,4 @@ jobs:
             Sitzplan-${{ env.APP_VERSION }}-macos.dmg
             sitzplan-ios-unsigned.zip
             Sitzplan-${{ env.APP_VERSION }}-android.apk
+            SHA256SUMS.txt

@@ -34,6 +34,7 @@ void main() {
           {
             'name': assetName,
             'browser_download_url': 'https://example.invalid/$assetName',
+            'digest': 'sha256:${'a' * 64}',
           },
         ],
       }, '1.4.0');
@@ -41,6 +42,7 @@ void main() {
       expect(release, isNotNull);
       expect(release!.version, '1.5.0');
       expect(release.assetName, assetName);
+      expect(release.sha256Digest, 'a' * 64);
     });
 
     test('ignores prereleases and releases without the required asset', () {
@@ -58,6 +60,24 @@ void main() {
           'tag_name': 'v1.5.0',
           'html_url': 'https://example.invalid/release',
           'assets': const [],
+        }, '1.4.0'),
+        isNull,
+      );
+    });
+
+    test('rejects assets without a GitHub SHA-256 digest', () {
+      final assetName = UpdateService.assetNameForPlatform('1.5.0');
+      if (assetName == null) return;
+      expect(
+        UpdateService.releaseFromGitHubJson({
+          'tag_name': 'v1.5.0',
+          'html_url': 'https://example.invalid/release',
+          'assets': [
+            {
+              'name': assetName,
+              'browser_download_url': 'https://example.invalid/$assetName',
+            },
+          ],
         }, '1.4.0'),
         isNull,
       );

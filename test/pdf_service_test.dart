@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:sitzplan/models/seating_plan.dart';
@@ -73,5 +74,27 @@ void main() {
 
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
     expect(bytes.length, greaterThan(1000));
+  });
+
+  test('large class lists are split across multiple A4 pages', () async {
+    final students = [
+      for (var index = 0; index < 100; index++)
+        Seat(
+          planId: 1,
+          row: index ~/ 10,
+          col: index % 10,
+          firstName: 'Vorname $index',
+          lastName: 'Nachname $index',
+        ),
+    ];
+    final bytes = await PdfService().buildPdf(
+      SeatingPlan(name: 'Große Klasse', rows: 10, columns: 10),
+      students,
+    );
+    expect(bytes, isNotEmpty);
+    expect(
+      PdfService.classListPageCount(students.length, const ClassListSettings()),
+      greaterThan(1),
+    );
   });
 }

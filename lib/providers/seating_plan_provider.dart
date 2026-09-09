@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+
 import '../models/seating_plan.dart';
 import '../services/database_service.dart';
 import '../services/import_export_service.dart';
@@ -180,15 +181,15 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
   Future<int> fillFreeSeatsFromCsv(List<CsvStudent> students) async {
     if (_plan == null || students.isEmpty) return 0;
 
-    var added = 0;
+    final additions = <Seat>[];
     for (var row = 0; row < _plan!.rows; row++) {
       for (var col = 0; col < _plan!.columns; col++) {
-        if (added >= students.length) break;
+        if (additions.length >= students.length) break;
         final existing = getSeat(row, col);
         if (existing != null && !existing.isEmpty) continue;
 
-        final student = students[added];
-        await _db.upsertSeat(
+        final student = students[additions.length];
+        additions.add(
           Seat(
             planId: _plan!.id!,
             row: row,
@@ -204,42 +205,42 @@ class SeatingPlanEditorProvider extends ChangeNotifier {
                 : null,
           ),
         );
-        added++;
       }
     }
 
-    _setSeats(await _db.getSeats(_plan!.id!));
+    final saved = await _db.insertSeats(_plan!.id!, additions);
+    _setSeats([..._seats, ...saved]);
     _clearHistory();
     notifyListeners();
-    return added;
+    return saved.length;
   }
 
   Future<int> fillFreeSeatsWithPhotos(List<String> photoPaths) async {
     if (_plan == null || photoPaths.isEmpty) return 0;
 
-    var added = 0;
+    final additions = <Seat>[];
     for (var row = 0; row < _plan!.rows; row++) {
       for (var col = 0; col < _plan!.columns; col++) {
-        if (added >= photoPaths.length) break;
+        if (additions.length >= photoPaths.length) break;
         final existing = getSeat(row, col);
         if (existing != null && !existing.isEmpty) continue;
 
-        await _db.upsertSeat(
+        additions.add(
           Seat(
             planId: _plan!.id!,
             row: row,
             col: col,
-            photoPath: photoPaths[added],
+            photoPath: photoPaths[additions.length],
           ),
         );
-        added++;
       }
     }
 
-    _setSeats(await _db.getSeats(_plan!.id!));
+    final saved = await _db.insertSeats(_plan!.id!, additions);
+    _setSeats([..._seats, ...saved]);
     _clearHistory();
     notifyListeners();
-    return added;
+    return saved.length;
   }
 
   /// Move a seat to a new position. If target is occupied, swap both.

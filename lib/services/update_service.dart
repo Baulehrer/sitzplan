@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:crypto/crypto.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -18,12 +19,14 @@ class UpdateRelease {
     required this.releaseUrl,
     required this.assetName,
     required this.assetUrl,
+    required this.sha256Digest,
   });
 
   final String version;
   final Uri releaseUrl;
   final String assetName;
   final Uri assetUrl;
+  final String sha256Digest;
 }
 
 class UpdateService {
@@ -81,17 +84,22 @@ class UpdateService {
     }
 
     final sink = partial.openWrite();
+    final digestOutput = _DigestCollector();
+    final digestSink = sha256.startChunkedConversion(digestOutput);
     var received = 0;
     final total = response.contentLength;
     try {
       await for (final chunk in response.timeout(const Duration(seconds: 30))) {
         sink.add(chunk);
+        digestSink.add(chunk);
         received += chunk.length;
         onProgress?.call(received, total);
       }
       await sink.flush();
       await sink.close();
+      digestSink.close();
     } catch (_) {
+      digestSink.close();
       await sink.close();
       if (await partial.exists()) await partial.delete();
       rethrow;
@@ -99,6 +107,13 @@ class UpdateService {
     if (received == 0 || (total > 0 && received != total)) {
       if (await partial.exists()) await partial.delete();
       throw const UpdateException('Das Update wurde unvollständig geladen.');
+    }
+    final actualDigest = digestOutput.value?.toString();
+    if (actualDigest != release.sha256Digest) {
+      await partial.delete();
+      throw const UpdateException(
+        'Das Update hat die Integritätsprüfung nicht bestanden.',
+      );
     }
     if (await target.exists()) await target.delete();
     return partial.rename(target.path);
@@ -224,13 +239,20 @@ class UpdateService {
       }
     }
     final assetUrl = asset?['browser_download_url'] as String?;
+    final digest = asset?['digest'] as String?;
     final releaseUrl = json['html_url'] as String?;
-    if (assetUrl == null || releaseUrl == null) return null;
+    final sha256Digest = digest?.startsWith('sha256:') == true
+        ? digest!.substring('sha256:'.length).toLowerCase()
+        : null;
+    if (assetUrl == null || releaseUrl == null || sha256Digest == null) {
+      return null;
+    }
     return UpdateRelease(
       version: version,
       releaseUrl: Uri.parse(releaseUrl),
       assetName: assetName,
       assetUrl: Uri.parse(assetUrl),
+      sha256Digest: sha256Digest,
     );
   }
 
@@ -252,4 +274,14 @@ class UpdateException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class _DigestCollector implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest data) => value = data;
+
+  @override
+  void close() {}
 }

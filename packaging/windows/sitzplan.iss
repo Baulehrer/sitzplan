@@ -19,6 +19,10 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+SignTool=artifactsign
+SignedUninstaller=yes
+SignToolRetryCount=3
+SignToolMinimumTimeBetween=1000
 
 [Languages]
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"

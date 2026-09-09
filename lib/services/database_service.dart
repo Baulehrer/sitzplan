@@ -1,10 +1,12 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
+
 import '../models/seating_plan.dart';
 
 class DatabaseService {
@@ -269,6 +271,24 @@ class DatabaseService {
     return saved!;
   }
 
+  Future<List<Seat>> insertSeats(int planId, Iterable<Seat> seats) async {
+    final pending = seats.where((seat) => !seat.isEmpty).toList();
+    if (pending.isEmpty) return const [];
+
+    final db = await database;
+    final saved = <Seat>[];
+    await db.transaction((txn) async {
+      for (final seat in pending) {
+        final values = seat.copyWith(id: null, planId: planId).toMap()
+          ..remove('id');
+        final id = await txn.insert('seats', values);
+        saved.add(seat.copyWith(id: id, planId: planId));
+      }
+      await _touchPlan(txn, planId);
+    });
+    return saved;
+  }
+
   Future<void> deleteSeat(int seatId) async {
     final db = await database;
     Seat? deleted;
@@ -420,30 +440,42 @@ class DatabaseService {
     );
     final created = await createPlan(newPlan);
 
-    if (copySeats) {
-      final seats = await getSeats(original.id!);
-      for (final seat in seats) {
-        final copiedPhotoPath = includePhotos
-            ? await _copyPhoto(seat.photoPath)
-            : null;
-        await upsertSeat(
-          Seat(
-            planId: created.id!,
-            row: seat.row,
-            col: seat.col,
-            firstName: seat.firstName,
-            lastName: seat.lastName,
-            photoPath: copiedPhotoPath,
-            extraInfo: seat.extraInfo,
-            extraInfo2: seat.extraInfo2,
-            extraInfo3: seat.extraInfo3,
-            isLocked: seat.isLocked,
-          ),
-        );
+    final copiedPhotoPaths = <String>[];
+    try {
+      if (copySeats) {
+        final seats = await getSeats(original.id!);
+        final copies = <Seat>[];
+        for (final seat in seats) {
+          final copiedPhotoPath = includePhotos
+              ? await _copyPhoto(seat.photoPath)
+              : null;
+          if (copiedPhotoPath != null) copiedPhotoPaths.add(copiedPhotoPath);
+          copies.add(
+            Seat(
+              planId: created.id!,
+              row: seat.row,
+              col: seat.col,
+              firstName: seat.firstName,
+              lastName: seat.lastName,
+              photoPath: copiedPhotoPath,
+              extraInfo: seat.extraInfo,
+              extraInfo2: seat.extraInfo2,
+              extraInfo3: seat.extraInfo3,
+              isLocked: seat.isLocked,
+            ),
+          );
+        }
+        await insertSeats(created.id!, copies);
       }
+      return created;
+    } catch (_) {
+      await deletePlan(created.id!);
+      for (final path in copiedPhotoPaths) {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      }
+      rethrow;
     }
-
-    return created;
   }
 
   Future<Seat?> _getSeatById(DatabaseExecutor db, int seatId) async {

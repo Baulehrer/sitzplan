@@ -2,11 +2,14 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart' show BuildContext;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
 import '../models/seating_plan.dart';
 
 class PdfService {
@@ -125,99 +128,127 @@ class PdfService {
     final width = settings.totalWidthCm * PdfPageFormat.cm;
     final rowHeight = settings.rowHeightCm * PdfPageFormat.cm;
     final remarkWidth = settings.remarksWidthCm * PdfPageFormat.cm / 3;
+    final rowsPerPage = _classListRowsPerPage(settings);
+    final pageCount = classListPageCount(students.length, settings);
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(PdfPageFormat.cm),
-        build: (_) => pw.Align(
-          alignment: pw.Alignment.topCenter,
-          child: pw.CustomPaint(
-            foregroundPainter: (canvas, size) =>
-                _drawDashedBorder(canvas, size),
-            child: pw.Container(
-              width: width,
-              padding: const pw.EdgeInsets.all(8),
-              child: pw.Column(
-                mainAxisSize: pw.MainAxisSize.min,
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                children: [
-                  pw.Center(
-                    child: pw.Text(
-                      'Klassenliste',
-                      style: pw.TextStyle(
-                        fontSize: 16,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  _classListColumnHeaders(
-                    settings: settings,
-                    rowHeight: rowHeight,
-                    remarkWidth: remarkWidth,
-                    plan: plan,
-                  ),
-                  pw.Table(
-                    columnWidths: {
-                      0: pw.FixedColumnWidth(
-                        settings.numberWidthCm * PdfPageFormat.cm,
-                      ),
-                      1: pw.FixedColumnWidth(
-                        settings.lastNameWidthCm * PdfPageFormat.cm,
-                      ),
-                      2: pw.FixedColumnWidth(
-                        settings.firstNameWidthCm * PdfPageFormat.cm,
-                      ),
-                      3: pw.FixedColumnWidth(remarkWidth),
-                      4: pw.FixedColumnWidth(remarkWidth),
-                      5: pw.FixedColumnWidth(remarkWidth),
-                    },
-                    border: pw.TableBorder.all(
-                      color: PdfColors.black,
-                      width: .6,
-                    ),
-                    children: [
-                      for (var index = 0; index < students.length; index++)
-                        pw.TableRow(
-                          children: [
-                            _classListCell(
-                              '${index + 1}',
-                              rowHeight,
-                              align: pw.Alignment.center,
-                            ),
-                            _classListCell(
-                              students[index].lastName ?? '',
-                              rowHeight,
-                            ),
-                            _classListCell(
-                              students[index].firstName ?? '',
-                              rowHeight,
-                            ),
-                            _classListCell(
-                              students[index].extraInfo ?? '',
-                              rowHeight,
-                            ),
-                            _classListCell(
-                              students[index].extraInfo2 ?? '',
-                              rowHeight,
-                            ),
-                            _classListCell(
-                              students[index].extraInfo3 ?? '',
-                              rowHeight,
-                            ),
-                          ],
+    for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+      final start = pageIndex * rowsPerPage;
+      final pageStudents = students
+          .skip(start)
+          .take(rowsPerPage)
+          .toList(growable: false);
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(PdfPageFormat.cm),
+          build: (_) => pw.Align(
+            alignment: pw.Alignment.topCenter,
+            child: pw.CustomPaint(
+              foregroundPainter: (canvas, size) =>
+                  _drawDashedBorder(canvas, size),
+              child: pw.Container(
+                width: width,
+                padding: const pw.EdgeInsets.all(8),
+                child: pw.Column(
+                  mainAxisSize: pw.MainAxisSize.min,
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    pw.Center(
+                      child: pw.Text(
+                        'Klassenliste',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
                         ),
-                    ],
-                  ),
-                ],
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    _classListColumnHeaders(
+                      settings: settings,
+                      rowHeight: rowHeight,
+                      remarkWidth: remarkWidth,
+                      plan: plan,
+                    ),
+                    pw.Table(
+                      columnWidths: {
+                        0: pw.FixedColumnWidth(
+                          settings.numberWidthCm * PdfPageFormat.cm,
+                        ),
+                        1: pw.FixedColumnWidth(
+                          settings.lastNameWidthCm * PdfPageFormat.cm,
+                        ),
+                        2: pw.FixedColumnWidth(
+                          settings.firstNameWidthCm * PdfPageFormat.cm,
+                        ),
+                        3: pw.FixedColumnWidth(remarkWidth),
+                        4: pw.FixedColumnWidth(remarkWidth),
+                        5: pw.FixedColumnWidth(remarkWidth),
+                      },
+                      border: pw.TableBorder.all(
+                        color: PdfColors.black,
+                        width: .6,
+                      ),
+                      children: [
+                        for (
+                          var index = 0;
+                          index < pageStudents.length;
+                          index++
+                        )
+                          pw.TableRow(
+                            children: [
+                              _classListCell(
+                                '${start + index + 1}',
+                                rowHeight,
+                                align: pw.Alignment.center,
+                              ),
+                              _classListCell(
+                                pageStudents[index].lastName ?? '',
+                                rowHeight,
+                              ),
+                              _classListCell(
+                                pageStudents[index].firstName ?? '',
+                                rowHeight,
+                              ),
+                              _classListCell(
+                                pageStudents[index].extraInfo ?? '',
+                                rowHeight,
+                              ),
+                              _classListCell(
+                                pageStudents[index].extraInfo2 ?? '',
+                                rowHeight,
+                              ),
+                              _classListCell(
+                                pageStudents[index].extraInfo3 ?? '',
+                                rowHeight,
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
   }
+
+  static int _classListRowsPerPage(ClassListSettings settings) {
+    final rowHeight = settings.rowHeightCm * PdfPageFormat.cm;
+    final availableRowsHeight =
+        PdfPageFormat.a4.availableHeight -
+        2 * PdfPageFormat.cm -
+        16 -
+        38 -
+        2 * rowHeight;
+    return math.max(1, availableRowsHeight ~/ rowHeight);
+  }
+
+  @visibleForTesting
+  static int classListPageCount(int studentCount, ClassListSettings settings) =>
+      math.max(1, (studentCount / _classListRowsPerPage(settings)).ceil());
 
   List<Seat> _classListStudents(List<Seat> seats, PdfExportOptions options) {
     final students = seats.where((seat) => !seat.isEmpty).toList();

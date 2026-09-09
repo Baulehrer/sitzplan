@@ -37,6 +37,27 @@ void main() {
     );
   });
 
+  test('bulk insert is atomic and assigns IDs', () async {
+    final plan = await service.createPlan(
+      SeatingPlan(name: 'Testplan', rows: 1, columns: 2),
+    );
+    final saved = await service.insertSeats(plan.id!, [
+      Seat(planId: plan.id!, row: 0, col: 0, firstName: 'Ada'),
+      Seat(planId: plan.id!, row: 0, col: 1, firstName: 'Grace'),
+    ]);
+    expect(saved, hasLength(2));
+    expect(saved.every((seat) => seat.id != null), isTrue);
+
+    await expectLater(
+      service.insertSeats(plan.id!, [
+        Seat(planId: plan.id!, row: 1, col: 0, firstName: 'Linus'),
+        Seat(planId: plan.id!, row: 1, col: 0, firstName: 'Margaret'),
+      ]),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await service.getSeats(plan.id!), hasLength(2));
+  });
+
   test('swap and undo restore both positions atomically', () async {
     final plan = await service.createPlan(
       SeatingPlan(name: 'Testplan', rows: 1, columns: 2),

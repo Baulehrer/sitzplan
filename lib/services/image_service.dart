@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_selector/file_selector.dart';
@@ -292,20 +293,11 @@ class ImageService {
 
   Future<String> _saveAndCompress(File source) async {
     final bytes = await source.readAsBytes();
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw Exception('Bild konnte nicht gelesen werden');
-
-    // Resize to max 300x300 maintaining aspect ratio
-    final resized = img.copyResize(
-      decoded,
-      width: decoded.width > decoded.height ? 300 : -1,
-      height: decoded.height >= decoded.width ? 300 : -1,
-    );
+    final jpg = await compute(_resizeAndEncodeJpg, bytes);
 
     final dir = await _photoDir;
     final filename = '${_uuid.v4()}.jpg';
     final outputPath = p.join(dir, filename);
-    final jpg = img.encodeJpg(resized, quality: 85);
     await File(outputPath).writeAsBytes(jpg);
 
     return outputPath;
@@ -316,6 +308,17 @@ class ImageService {
     final file = File(path);
     if (await file.exists()) await file.delete();
   }
+}
+
+Uint8List _resizeAndEncodeJpg(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) throw Exception('Bild konnte nicht gelesen werden');
+  final resized = img.copyResize(
+    decoded,
+    width: decoded.width > decoded.height ? 300 : -1,
+    height: decoded.height >= decoded.width ? 300 : -1,
+  );
+  return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
 }
 
 class CameraCaptureException implements Exception {
