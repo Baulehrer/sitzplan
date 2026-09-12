@@ -20,7 +20,7 @@ jobs:
       app_version: ${{ steps.version.outputs.value }}
       app_build_number: ${{ steps.version.outputs.build_number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Read app version
         id: version
         run: |
@@ -47,7 +47,7 @@ jobs:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -57,7 +57,7 @@ jobs:
       - run: flutter build linux --release --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
       - name: Build AppImage
         run: packaging/linux/build_appimage.sh
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-linux-appimage
           path: dist/Sitzplan-${{ env.APP_VERSION }}-x86_64.AppImage
@@ -70,7 +70,7 @@ jobs:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -87,7 +87,7 @@ jobs:
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\sitzplan.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-windows-installer
           path: dist/Sitzplan-${{ env.APP_VERSION }}-Setup.exe
@@ -99,7 +99,7 @@ jobs:
       - name: Build and validate unsigned Store MSIX
         shell: pwsh
         run: packaging/windows/build_msix.ps1
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-windows-store
           path: dist/Sitzplan-${{ env.APP_VERSION }}-Store.msix
@@ -112,7 +112,7 @@ jobs:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -121,7 +121,7 @@ jobs:
       - run: flutter build macos --release --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
       - name: Build DMG
         run: packaging/macos/create_dmg.sh
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-macos-dmg
           path: dist/Sitzplan-${{ env.APP_VERSION }}-macos.dmg
@@ -134,7 +134,7 @@ jobs:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -150,7 +150,7 @@ jobs:
             exit 1
           fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/sitzplan-ios-unsigned.zip"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-ios-unsigned
           path: sitzplan-ios-unsigned.zip
@@ -163,8 +163,8 @@ jobs:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -192,7 +192,7 @@ jobs:
       - run: flutter build apk --release --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk "Sitzplan-${APP_VERSION}-android.apk"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sitzplan-android
           path: Sitzplan-${{ env.APP_VERSION }}-android.apk
@@ -208,13 +208,13 @@ jobs:
     env:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
       - name: Create SHA-256 checksums
         run: sha256sum Sitzplan-* sitzplan-ios-unsigned.zip > SHA256SUMS.txt
       - name: Attest release artifacts
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             Sitzplan-*
