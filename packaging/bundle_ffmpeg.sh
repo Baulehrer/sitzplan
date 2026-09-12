@@ -43,10 +43,13 @@ curl --fail --location --retry 3 \
   "$ARCHIVE_URL"
 
 if command -v sha256sum >/dev/null 2>&1; then
-  printf '%s  %s\n' "$ARCHIVE_SHA256" "$TEMP_DIR/$ARCHIVE_NAME" | sha256sum --check --status
+  ACTUAL_SHA256="$(sha256sum "$TEMP_DIR/$ARCHIVE_NAME" | awk '{print $1}')"
 else
   ACTUAL_SHA256="$(shasum -a 256 "$TEMP_DIR/$ARCHIVE_NAME" | awk '{print $1}')"
-  [[ "$ACTUAL_SHA256" == "$ARCHIVE_SHA256" ]]
+fi
+if [[ "$ACTUAL_SHA256" != "$ARCHIVE_SHA256" ]]; then
+  echo "FFmpeg archive checksum mismatch: $ARCHIVE_NAME" >&2
+  exit 1
 fi
 
 mkdir -p "$TEMP_DIR/extracted"
