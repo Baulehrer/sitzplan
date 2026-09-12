@@ -14,6 +14,7 @@ foreach ($file in @('sitzplan.exe', 'flutter_windows.dll', 'ffmpeg.exe', 'FFMPEG
 $staging = Join-Path ([IO.Path]::GetTempPath()) ('sitzplan-msix-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $staging | Out-Null
 Copy-Item "$source\*" $staging -Recurse
+Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $staging 'LICENSE.txt')
 
 # Include the desktop C++ runtime instead of requiring a separately installed VC redistributable.
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'

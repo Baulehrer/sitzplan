@@ -35,6 +35,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib/services/update_service.dart test/store_update_service_test.dart
       - run: flutter analyze
       - run: flutter test
       - run: flutter test --dart-define=STORE_BUILD=true test/store_update_service_test.dart
