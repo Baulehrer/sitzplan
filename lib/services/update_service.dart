@@ -67,7 +67,9 @@ class UpdateService {
     UpdateProgress? onProgress,
   }) async {
     if (isStoreBuild) {
-      throw const UpdateException('Updates werden vom Microsoft Store verwaltet.');
+      throw const UpdateException(
+        'Updates werden vom Microsoft Store verwaltet.',
+      );
     }
     final directory = await getTemporaryDirectory();
     final updateDirectory = Directory(
