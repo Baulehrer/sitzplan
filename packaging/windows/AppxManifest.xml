@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap rescap">
+  <Identity Name="Ferdinand-Braun-Schule.KaufisSitzplan-App"
+            Publisher="CN=C4279560-AB23-4B63-9A2C-5EA6A16A977F"
+            Version="1.7.0.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Kaufis Sitzplan-App</DisplayName>
+    <PublisherDisplayName>Ferdinand-Braun-Schule</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Sitzpläne erstellen, Schülerfotos zuordnen und als PDF exportieren.</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources><Resource Language="de-DE" /></Resources>
+  <Applications>
+    <Application Id="Sitzplan" Executable="sitzplan.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Kaufis Sitzplan-App"
+                          Description="Sitzpläne erstellen und als PDF exportieren"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <DeviceCapability Name="webcam" />
+  </Capabilities>
+</Package>

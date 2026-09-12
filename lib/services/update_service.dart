@@ -38,8 +38,10 @@ class UpdateService {
 
   final HttpClient _client;
 
+  static const isStoreBuild = bool.fromEnvironment('STORE_BUILD');
+
   Future<UpdateRelease?> checkForUpdate() async {
-    if (kIsWeb || kDebugMode || Platform.isIOS) return null;
+    if (isStoreBuild || kIsWeb || kDebugMode || Platform.isIOS) return null;
 
     final packageInfo = await PackageInfo.fromPlatform();
     final request = await _client
@@ -64,6 +66,9 @@ class UpdateService {
     UpdateRelease release, {
     UpdateProgress? onProgress,
   }) async {
+    if (isStoreBuild) {
+      throw const UpdateException('Updates werden vom Microsoft Store verwaltet.');
+    }
     final directory = await getTemporaryDirectory();
     final updateDirectory = Directory(
       p.join(directory.path, 'sitzplan-update-${release.version}'),
@@ -123,6 +128,7 @@ class UpdateService {
     UpdateRelease release,
     File package,
   ) async {
+    if (isStoreBuild) return UpdateInstallResult.unsupported;
     if (Platform.isAndroid) {
       final started = await _androidChannel.invokeMethod<bool>('installApk', {
         'path': package.path,

@@ -37,6 +37,7 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      - run: flutter test --dart-define=STORE_BUILD=true test/store_update_service_test.dart
 
   build-linux:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
@@ -65,16 +66,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     needs: validate
     runs-on: windows-latest
-    environment: release
-    permissions:
-      contents: read
-      id-token: write
     env:
       APP_VERSION: ${{ needs.validate.outputs.app_version }}
       APP_BUILD_NUMBER: ${{ needs.validate.outputs.app_build_number }}
-      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
-      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
-      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
@@ -86,59 +80,29 @@ jobs:
       - name: Bundle camera runtime
         shell: bash
         run: packaging/bundle_ffmpeg.sh build/windows/x64/runner/Release win32-x64 ffmpeg.exe
-      - name: Sign in to Azure with OIDC
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Sign Windows application files
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}\build\windows\x64\runner\Release
-          files-folder-filter: exe,dll
-          files-folder-recurse: true
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-      - name: Install installer and signing tools
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build unsigned direct-download installer
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
-          $msi = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
-          Invoke-WebRequest -Uri 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi' -OutFile $msi
-          $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $msi, '/quiet', '/norestart')
-          if ($process.ExitCode -ne 0) { throw "Artifact Signing tools installation failed: $($process.ExitCode)" }
-      - name: Build and sign installer and uninstaller
-        shell: pwsh
-        run: |
-          $script = Join-Path $env:GITHUB_WORKSPACE 'packaging\windows\sign-artifact.ps1'
-          $definition = 'artifactsign=powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q' + $script + '$q $f'
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/S$definition" packaging\windows\sitzplan.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\sitzplan.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-      - name: Verify Authenticode signatures
-        shell: pwsh
-        run: |
-          $files = @(
-            Get-ChildItem build\windows\x64\runner\Release -Recurse -Include *.exe,*.dll
-            Get-ChildItem dist -Filter *.exe
-          )
-          foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature $file.FullName
-            if ($signature.Status -ne 'Valid') {
-              throw "Invalid Authenticode signature: $($file.FullName) ($($signature.Status))"
-            }
-            if ($signature.SignerCertificate.Subject -notlike "*${{ vars.WINDOWS_PUBLISHER }}*") {
-              throw "Unexpected publisher for $($file.FullName): $($signature.SignerCertificate.Subject)"
-            }
-          }
       - uses: actions/upload-artifact@v5
         with:
           name: sitzplan-windows-installer
           path: dist/Sitzplan-${{ env.APP_VERSION }}-Setup.exe
+      - name: Build Store variant with Store-managed updates
+        run: flutter build windows --release --dart-define=STORE_BUILD=true --build-name "${{ env.APP_VERSION }}" --build-number "${{ env.APP_BUILD_NUMBER }}"
+      - name: Bundle Store camera runtime
+        shell: bash
+        run: packaging/bundle_ffmpeg.sh build/windows/x64/runner/Release win32-x64 ffmpeg.exe
+      - name: Build and validate unsigned Store MSIX
+        shell: pwsh
+        run: packaging/windows/build_msix.ps1
+      - uses: actions/upload-artifact@v5
+        with:
+          name: sitzplan-windows-store
+          path: dist/Sitzplan-${{ env.APP_VERSION }}-Store.msix
 
   build-macos:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
@@ -262,6 +226,7 @@ jobs:
           files: |
             Sitzplan-${{ env.APP_VERSION }}-x86_64.AppImage
             Sitzplan-${{ env.APP_VERSION }}-Setup.exe
+            Sitzplan-${{ env.APP_VERSION }}-Store.msix
             Sitzplan-${{ env.APP_VERSION }}-macos.dmg
             sitzplan-ios-unsigned.zip
             Sitzplan-${{ env.APP_VERSION }}-android.apk
