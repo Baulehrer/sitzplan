@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sitzplan/services/update_service.dart';
 
@@ -27,4 +29,3 @@ void main() {
     skip: !UpdateService.isStoreBuild,
   );
 }
-import 'dart:io';
