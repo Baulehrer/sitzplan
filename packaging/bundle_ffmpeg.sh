@@ -50,7 +50,19 @@ else
 fi
 
 mkdir -p "$TEMP_DIR/extracted"
-tar -xf "$TEMP_DIR/$ARCHIVE_NAME" -C "$TEMP_DIR/extracted"
+if [[ "$ARCHIVE_NAME" == *.zip ]]; then
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q "$TEMP_DIR/$ARCHIVE_NAME" -d "$TEMP_DIR/extracted"
+  elif [[ -x /c/Windows/System32/tar.exe ]]; then
+    # Git Bash's GNU tar cannot extract ZIP; Windows' bundled bsdtar can.
+    /c/Windows/System32/tar.exe -xf "$TEMP_DIR/$ARCHIVE_NAME" -C "$TEMP_DIR/extracted"
+  else
+    echo 'ZIP extraction requires unzip or the Windows system tar.' >&2
+    exit 1
+  fi
+else
+  tar -xf "$TEMP_DIR/$ARCHIVE_NAME" -C "$TEMP_DIR/extracted"
+fi
 FFMPEG_PATH="$(find "$TEMP_DIR/extracted" -type f \( -name ffmpeg -o -name ffmpeg.exe \) -print -quit)"
 if [[ -z "$FFMPEG_PATH" ]]; then
   echo "FFmpeg executable missing from $ARCHIVE_NAME" >&2
