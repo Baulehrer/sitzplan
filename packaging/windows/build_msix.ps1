@@ -32,7 +32,9 @@ $manifest.Save((Join-Path $staging 'AppxManifest.xml'))
 
 Add-Type -AssemblyName System.Drawing
 $assets = New-Item -ItemType Directory -Path (Join-Path $staging 'Assets') -Force
-$icon = [Drawing.Image]::FromFile((Join-Path $repo 'assets\icon\app_icon.png'))
+# Reuse the tracked Windows icon; the original PNG is not part of the repository.
+$ico = [Drawing.Icon]::new((Join-Path $repo 'windows\runner\resources\app_icon.ico'), 256, 256)
+$icon = $ico.ToBitmap()
 try {
   foreach ($item in @(@('StoreLogo.png', 50), @('Square150x150Logo.png', 150), @('Square44x44Logo.png', 44))) {
     $size = [int]$item[1]
@@ -45,7 +47,7 @@ try {
       $bitmap.Save((Join-Path $assets.FullName $item[0]), [Drawing.Imaging.ImageFormat]::Png)
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
   }
-} finally { $icon.Dispose() }
+} finally { $icon.Dispose(); $ico.Dispose() }
 
 $makeAppx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
   Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
